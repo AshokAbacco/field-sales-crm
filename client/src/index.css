@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply text-slate-800 antialiased; }
+  :focus-visible { @apply outline-none ring-2 ring-brand-500 ring-offset-1; }
+}
+
+@layer components {
+  .card { @apply rounded-2xl border border-slate-200 bg-white shadow-sm; }
+  .input {
+    @apply block w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400
+      transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100 disabled:bg-slate-100 disabled:text-slate-500;
+  }
+  .input-error { @apply border-rose-400 focus:border-rose-500 focus:ring-rose-100; }
+  .label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600; }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition
+      disabled:cursor-not-allowed disabled:opacity-60 active:scale-[.98];
+  }
+  .btn-primary { @apply btn bg-brand-600 text-white shadow-sm hover:bg-brand-700; }
+  .btn-secondary { @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50; }
+  .btn-danger { @apply btn bg-rose-600 text-white hover:bg-rose-700; }
+  .btn-success { @apply btn bg-emerald-600 text-white hover:bg-emerald-700; }
+  .btn-ghost { @apply btn text-slate-600 hover:bg-slate-100; }
+  .btn-sm { @apply px-3 py-1.5 text-xs rounded-lg; }
+  .icon-btn { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800; }
+  .th { @apply px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500; }
+  .td { @apply px-4 py-3 align-middle text-sm; }
+}
+
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }

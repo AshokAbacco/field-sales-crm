@@ -1,0 +1,13 @@
+{
+  "name": "field-sales-crm",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "setup": "npm --prefix server run db:deploy && npm --prefix server run db:seed",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "start": "NODE_ENV=production npm --prefix server start"
+  }
+}

@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  FIELD_VISITOR
+}
+
+enum VisitStatus {
+  OPEN
+  FOLLOW_UP
+  DEAL_DONE
+  LEAVE_OUT
+}
+
+enum BusinessCategory {
+  CAR_GARAGE
+  BIKE_GARAGE
+  WASH_CENTER
+  RESTAURANT
+  GROCERY
+  OTHER
+}
+
+enum ShiftStatus {
+  ACTIVE
+  COMPLETED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String
+  role          Role      @default(FIELD_VISITOR)
+  phone         String?
+  employeeCode  String?   @unique
+  state         String?
+  district      String?
+  bikeName      String?
+  bikeMileage   Float?
+  dlNumber      String?
+  dlPhotoUrl    String?
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  teamId        String?
+  team          Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  zoneId        String?
+  zone          Zone?     @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  shifts        Shift[]
+  visits        Visit[]
+  pings         LocationPing[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([role, isActive])
+  @@index([teamId])
+  @@index([zoneId])
+}
+
+model Zone {
+  id           String   @id @default(cuid())
+  name         String
+  state        String
+  district     String
+  focusSegment String?
+  users        User[]
+  teams        Team[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([name, state, district])
+}
+
+model Team {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  zoneId        String?
+  zone          Zone?    @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  visitsTarget  Int      @default(0)
+  dealsTarget   Int      @default(0)
+  revenueTarget Decimal  @default(0) @db.Decimal(14, 2)
+  members       User[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Shift {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Local business date (YYYY-MM-DD) in APP_TIMEZONE
+  date         String
+  status       ShiftStatus @default(ACTIVE)
+  startTime    DateTime    @default(now())
+  startKm      Float
+  startLat     Float?
+  startLng     Float?
+  startAddress String?
+  endTime      DateTime?
+  endKm        Float?
+  endLat       Float?
+  endLng       Float?
+  endAddress   String?
+  distanceKm   Float?
+  fuelRate     Decimal?    @db.Decimal(8, 2)
+  allowance    Decimal?    @db.Decimal(12, 2)
+  visits       Visit[]
+  pings        LocationPing[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([userId, date])
+  @@index([date])
+  @@index([status])
+}
+
+model Visit {
+  id            String           @id @default(cuid())
+  userId        String
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shiftId       String?
+  shift         Shift?           @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  category      BusinessCategory
+  product       String
+  companyName   String
+  contactPerson String?
+  phone         String
+  email         String?
+  status        VisitStatus      @default(OPEN)
+  address       String
+  lat           Float?
+  lng           Float?
+  odometerKm    Float?
+  dealValue     Decimal?         @db.Decimal(14, 2)
+  nextFollowUp  DateTime?
+  notes         String?
+  adminNote     String?
+  visitedAt     DateTime         @default(now())
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([userId, visitedAt])
+  @@index([status])
+  @@index([visitedAt])
+  @@index([nextFollowUp])
+}
+
+model LocationPing {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shiftId    String
+  shift      Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  lat        Float
+  lng        Float
+  accuracy   Float?
+  recordedAt DateTime @default(now())
+
+  @@index([shiftId, recordedAt])
+  @@index([userId, recordedAt])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
