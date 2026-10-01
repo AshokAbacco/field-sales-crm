@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { asyncHandler } from '../lib/http.js';
+import { asyncHandler, HttpError } from '../lib/http.js';
 import { validate } from '../middleware/validate.js';
 import { requireRole } from '../middleware/auth.js';
 import { getFuelRate } from '../lib/settings.js';
@@ -41,32 +41,37 @@ const teamSchema = z.object({
   visitsTarget: z.coerce.number().int().min(0).default(0),
   dealsTarget: z.coerce.number().int().min(0).default(0),
   revenueTarget: z.coerce.number().min(0).default(0),
-  memberIds: z.array(z.string()).optional(),
+  managerId: z.string().optional().nullable().transform((v) => v || null),
 });
+
+async function checkManager(managerId) {
+  if (!managerId) return;
+  const m = await prisma.user.findUnique({ where: { id: managerId }, select: { role: true } });
+  if (m?.role !== 'MANAGER') throw new HttpError(400, 'Team lead must be a user with the Manager role');
+}
 
 router.get(
   '/teams',
   asyncHandler(async (_req, res) => {
     const rows = await prisma.team.findMany({
-      include: { zone: { select: { id: true, name: true } }, members: { select: { id: true, name: true } } },
+      include: {
+        zone: { select: { id: true, name: true } },
+        manager: { select: { id: true, name: true, _count: { select: { reports: true } } } },
+      },
       orderBy: { name: 'asc' },
     });
     res.json({ data: rows });
   }),
 );
 router.post('/teams', requireRole('ADMIN'), validate(teamSchema), asyncHandler(async (req, res) => {
-  const { memberIds, ...data } = req.body;
-  const team = await prisma.team.create({ data: { ...data, ...(memberIds && { members: { connect: memberIds.map((id) => ({ id })) } }) } });
-  res.status(201).json({ team });
+  await checkManager(req.body.managerId);
+  res.status(201).json({ team: await prisma.team.create({ data: req.body }) });
 }));
 router.patch('/teams/:id', requireRole('ADMIN'), validate(teamSchema.partial()), asyncHandler(async (req, res) => {
-  const { memberIds, ...data } = req.body;
+  const data = { ...req.body };
   Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
-  const team = await prisma.team.update({
-    where: { id: req.params.id },
-    data: { ...data, ...(memberIds && { members: { set: memberIds.map((id) => ({ id })) } }) },
-  });
-  res.json({ team });
+  if (data.managerId) await checkManager(data.managerId);
+  res.json({ team: await prisma.team.update({ where: { id: req.params.id }, data }) });
 }));
 router.delete('/teams/:id', requireRole('ADMIN'), asyncHandler(async (req, res) => {
   await prisma.team.delete({ where: { id: req.params.id } });

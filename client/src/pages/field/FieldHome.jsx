@@ -114,23 +114,43 @@ export default function FieldHome() {
         <StatCard label="KM this month" value={s ? Math.round(s.monthKm) : '–'} sub={s ? `${fmtINR(s.monthAllowance)} allowance` : ''} icon={FiTruck} tone="sky" />
       </div>
 
-      {s?.team && (s.team.visitsTarget > 0 || s.team.dealsTarget > 0) && (
+      {s?.target && (s.target.visits > 0 || s.target.deals > 0) && (
         <div className="card p-5">
-          <p className="mb-3 text-sm font-bold">My month progress · {s.team.name}</p>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-bold">My target this month · {s.target.team}</p>
+            {s.manager && (
+              <p className="text-xs text-slate-500">
+                Manager: <b className="text-slate-700">{s.manager.name}</b>
+                {s.manager.phone && (
+                  <a className="ml-2 font-semibold text-brand-600" href={`tel:${s.manager.phone}`}>
+                    Call
+                  </a>
+                )}
+              </p>
+            )}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <div className="mb-1 flex justify-between text-xs font-semibold text-slate-500">
                 <span>Visits</span>
-                <span>{s.monthVisits} / {s.team.visitsTarget} (team)</span>
+                <span>
+                  {s.monthVisits} / {s.target.visits}
+                </span>
               </div>
-              <ProgressBar value={pct(s.monthVisits, s.team.visitsTarget)} />
+              <ProgressBar value={pct(s.monthVisits, s.target.visits)} />
             </div>
             <div>
               <div className="mb-1 flex justify-between text-xs font-semibold text-slate-500">
                 <span>Deals</span>
-                <span>{s.monthDeals} / {s.team.dealsTarget} (team)</span>
+                <span>
+                  {s.monthDeals} / {s.target.deals}
+                </span>
               </div>
-              <ProgressBar value={pct(s.monthDeals, s.team.dealsTarget)} tone="green" />
+              <ProgressBar value={pct(s.monthDeals, s.target.deals)} tone="green" />
+            </div>
+            <div className="text-xs font-semibold text-slate-500">
+              Revenue won
+              <p className="text-lg font-extrabold text-slate-900">{fmtINR(s.monthRevenue)}</p>
             </div>
           </div>
         </div>

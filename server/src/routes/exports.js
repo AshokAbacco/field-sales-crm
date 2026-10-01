@@ -6,9 +6,10 @@ import { requireRole } from '../middleware/auth.js';
 import { config } from '../lib/config.js';
 import { localDate, dateStrRange } from '../lib/date.js';
 import { buildVisitWhere } from './visits.js';
+import { scopedUserWhere } from '../lib/scope.js';
 
 const router = Router();
-router.use(requireRole('ADMIN'));
+router.use(requireRole('ADMIN', 'MANAGER'));
 
 const BATCH = 1000;
 const fmtDateTime = (d) =>
@@ -21,7 +22,7 @@ const datasets = {
   visits: {
     title: 'Field Visits',
     columns: [
-      ['Visited At', 22], ['Field Visitor', 22], ['Business Name', 28], ['Category', 16], ['Product', 22], ['Contact Person', 20],
+      ['Visited At', 22], ['Field Employee', 22], ['Manager', 20], ['Business Name', 28], ['Category', 16], ['Product', 22], ['Contact Person', 20],
       ['Phone', 16], ['Email', 24], ['Status', 12], ['Deal Value (INR)', 16], ['Next Follow Up', 16], ['Address', 40],
       ['Latitude', 12], ['Longitude', 12], ['Odometer KM', 12], ['Notes', 40], ['Admin Note', 30],
     ],
@@ -31,14 +32,14 @@ const datasets = {
       for (;;) {
         const batch = await prisma.visit.findMany({
           where,
-          include: { user: { select: { name: true } } },
+          include: { user: { select: { name: true, manager: { select: { name: true } } } } },
           orderBy: { id: 'asc' },
           take: BATCH,
           ...(cursor && { skip: 1, cursor: { id: cursor } }),
         });
         if (!batch.length) return;
         yield batch.map((v) => [
-          fmtDateTime(v.visitedAt), v.user?.name, v.companyName, human(v.category), v.product, v.contactPerson, v.phone, v.email,
+          fmtDateTime(v.visitedAt), v.user?.name, v.user?.manager?.name, v.companyName, human(v.category), v.product, v.contactPerson, v.phone, v.email,
           human(v.status), v.dealValue != null ? Number(v.dealValue) : '', fmtDate(v.nextFollowUp), v.address, v.lat, v.lng,
           v.odometerKm, v.notes, v.adminNote,
         ]);
@@ -49,12 +50,12 @@ const datasets = {
   shifts: {
     title: 'Travel & Reimbursement',
     columns: [
-      ['Date', 12], ['Field Visitor', 22], ['District', 16], ['Bike', 18], ['Status', 12], ['Start Time', 20], ['Start KM', 12],
+      ['Date', 12], ['Field Employee', 22], ['Manager', 20], ['District', 16], ['Bike', 18], ['Status', 12], ['Start Time', 20], ['Start KM', 12],
       ['Start Location', 30], ['End Time', 20], ['End KM', 12], ['End Location', 30], ['Distance KM', 12], ['Rate / KM', 10],
       ['Allowance (INR)', 14], ['Visits', 8],
     ],
-    where: (req) => ({
-      ...(req.query.userId && { userId: req.query.userId }),
+    where: async (req) => ({
+      ...(await scopedUserWhere(req)),
       ...(dateStrRange(req.query.from, req.query.to) && { date: dateStrRange(req.query.from, req.query.to) }),
     }),
     async *rows(where) {
@@ -62,14 +63,14 @@ const datasets = {
       for (;;) {
         const batch = await prisma.shift.findMany({
           where,
-          include: { user: { select: { name: true, district: true, bikeName: true } }, _count: { select: { visits: true } } },
+          include: { user: { select: { name: true, district: true, bikeName: true, manager: { select: { name: true } } } }, _count: { select: { visits: true } } },
           orderBy: { id: 'asc' },
           take: BATCH,
           ...(cursor && { skip: 1, cursor: { id: cursor } }),
         });
         if (!batch.length) return;
         yield batch.map((s) => [
-          s.date, s.user?.name, s.user?.district, s.user?.bikeName, human(s.status), fmtDateTime(s.startTime), s.startKm,
+          s.date, s.user?.name, s.user?.manager?.name, s.user?.district, s.user?.bikeName, human(s.status), fmtDateTime(s.startTime), s.startKm,
           s.startAddress || (s.startLat != null ? `${s.startLat}, ${s.startLng}` : ''), fmtDateTime(s.endTime), s.endKm,
           s.endAddress || (s.endLat != null ? `${s.endLat}, ${s.endLng}` : ''), s.distanceKm, s.fuelRate != null ? Number(s.fuelRate) : '',
           s.allowance != null ? Number(s.allowance) : '', s._count.visits,
@@ -81,23 +82,26 @@ const datasets = {
   employees: {
     title: 'Employees',
     columns: [
-      ['Name', 22], ['Email', 28], ['Role', 14], ['Employee Code', 14], ['Phone', 16], ['Team', 18], ['Zone', 18], ['State', 14],
+      ['Name', 22], ['Email', 28], ['Role', 14], ['Employee Code', 14], ['Phone', 16], ['Reporting Manager', 20], ['Zone', 18], ['State', 14],
       ['District', 14], ['Bike', 18], ['Mileage KM/L', 12], ['DL Number', 18], ['Status', 10], ['Last Login', 20], ['Joined', 14],
     ],
-    where: (req) => ({ ...(req.query.role && { role: req.query.role }) }),
+    where: (req) => ({
+      ...(req.query.role && { role: req.query.role }),
+      ...(req.user.role === 'MANAGER' ? { managerId: req.user.id } : req.query.managerId && { managerId: req.query.managerId }),
+    }),
     async *rows(where) {
       let cursor;
       for (;;) {
         const batch = await prisma.user.findMany({
           where,
-          include: { team: { select: { name: true } }, zone: { select: { name: true } } },
+          include: { manager: { select: { name: true } }, zone: { select: { name: true } } },
           orderBy: { id: 'asc' },
           take: BATCH,
           ...(cursor && { skip: 1, cursor: { id: cursor } }),
         });
         if (!batch.length) return;
         yield batch.map((u) => [
-          u.name, u.email, human(u.role), u.employeeCode, u.phone, u.team?.name, u.zone?.name, u.state, u.district, u.bikeName,
+          u.name, u.email, u.role === 'FIELD_VISITOR' ? 'Field Employee' : human(u.role), u.employeeCode, u.phone, u.manager?.name, u.zone?.name, u.state, u.district, u.bikeName,
           u.bikeMileage, u.dlNumber, u.isActive ? 'Active' : 'Inactive', fmtDateTime(u.lastLoginAt), fmtDate(u.createdAt),
         ]);
         cursor = batch[batch.length - 1].id;
@@ -119,7 +123,7 @@ router.get(
     const ds = datasets[req.params.type];
     if (!ds) throw new HttpError(404, 'Unknown export type');
     const format = req.query.format === 'xlsx' ? 'xlsx' : 'csv';
-    const where = ds.where(req);
+    const where = await ds.where(req);
     const filename = `${req.params.type}-${localDate()}.${format}`;
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Cache-Control', 'no-store');

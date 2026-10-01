@@ -5,6 +5,7 @@ import { FiEye, FiEyeOff, FiLock, FiMail, FiNavigation, FiMapPin, FiTrendingUp, 
 import { useAuth } from '../context/AuthContext.jsx';
 import { errMsg } from '../api/client.js';
 import { Spinner } from '../components/ui.jsx';
+import { homePath } from '../utils/constants.js';
 
 export default function Login() {
   const { login } = useAuth();
@@ -21,7 +22,7 @@ export default function Login() {
     try {
       const u = await login(form.email.trim(), form.password);
       toast.success(`Welcome back, ${u.name.split(' ')[0]}!`);
-      nav(u.role === 'ADMIN' ? '/admin' : '/field', { replace: true });
+      nav(homePath(u), { replace: true });
     } catch (err) {
       setError(errMsg(err, 'Unable to sign in'));
     } finally {
@@ -70,7 +71,7 @@ export default function Login() {
             </div>
           </div>
           <h2 className="text-2xl font-extrabold text-slate-900">Sign in</h2>
-          <p className="mt-1 text-sm text-slate-500">Admins and field visitors use the same login. You'll be taken to your workspace.</p>
+          <p className="mt-1 text-sm text-slate-500">Admins, managers and field employees use the same login. You'll be taken to your workspace.</p>
 
           {error && <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{error}</div>}
 

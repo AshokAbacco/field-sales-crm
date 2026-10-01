@@ -17,7 +17,7 @@ export default function ShiftsTable({ state, showRep = false, onRoute, onPage })
             <thead className="border-b border-slate-100 bg-slate-50/60">
               <tr>
                 <th className="th">Date</th>
-                {showRep && <th className="th">Field Visitor</th>}
+                {showRep && <th className="th">Representative</th>}
                 <th className="th">Start (time / KM)</th>
                 <th className="th">End (time / KM)</th>
                 <th className="th">Distance</th>

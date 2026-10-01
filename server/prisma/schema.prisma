@@ -9,6 +9,7 @@ datasource db {
 
 enum Role {
   ADMIN
+  MANAGER
   FIELD_VISITOR
 }
 
@@ -34,33 +35,37 @@ enum ShiftStatus {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String
-  email         String    @unique
-  passwordHash  String
-  role          Role      @default(FIELD_VISITOR)
-  phone         String?
-  employeeCode  String?   @unique
-  state         String?
-  district      String?
-  bikeName      String?
-  bikeMileage   Float?
-  dlNumber      String?
-  dlPhotoUrl    String?
-  isActive      Boolean   @default(true)
-  lastLoginAt   DateTime?
-  teamId        String?
-  team          Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  zoneId        String?
-  zone          Zone?     @relation(fields: [zoneId], references: [id], onDelete: SetNull)
-  shifts        Shift[]
-  visits        Visit[]
-  pings         LocationPing[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id           String         @id @default(cuid())
+  name         String
+  email        String         @unique
+  passwordHash String
+  role         Role           @default(FIELD_VISITOR)
+  phone        String?
+  employeeCode String?        @unique
+  state        String?
+  district     String?
+  bikeName     String?
+  bikeMileage  Float?
+  dlNumber     String?
+  dlPhotoUrl   String?
+  isActive     Boolean        @default(true)
+  lastLoginAt  DateTime?
+  /// Reporting manager (for FIELD_VISITOR employees)
+  managerId    String?
+  manager      User?          @relation("ReportsTo", fields: [managerId], references: [id], onDelete: SetNull)
+  reports      User[]         @relation("ReportsTo")
+  /// Team led by this user (for MANAGER)
+  managedTeam  Team?          @relation("TeamManager")
+  zoneId       String?
+  zone         Zone?          @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  shifts       Shift[]
+  visits       Visit[]
+  pings        LocationPing[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 
   @@index([role, isActive])
-  @@index([teamId])
+  @@index([managerId])
   @@index([zoneId])
 }
 
@@ -86,19 +91,20 @@ model Team {
   visitsTarget  Int      @default(0)
   dealsTarget   Int      @default(0)
   revenueTarget Decimal  @default(0) @db.Decimal(14, 2)
-  members       User[]
+  managerId     String?  @unique
+  manager       User?    @relation("TeamManager", fields: [managerId], references: [id], onDelete: SetNull)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
 
 model Shift {
-  id           String      @id @default(cuid())
+  id           String         @id @default(cuid())
   userId       String
-  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Local business date (YYYY-MM-DD) in APP_TIMEZONE
   date         String
-  status       ShiftStatus @default(ACTIVE)
-  startTime    DateTime    @default(now())
+  status       ShiftStatus    @default(ACTIVE)
+  startTime    DateTime       @default(now())
   startKm      Float
   startLat     Float?
   startLng     Float?
@@ -109,12 +115,12 @@ model Shift {
   endLng       Float?
   endAddress   String?
   distanceKm   Float?
-  fuelRate     Decimal?    @db.Decimal(8, 2)
-  allowance    Decimal?    @db.Decimal(12, 2)
+  fuelRate     Decimal?       @db.Decimal(8, 2)
+  allowance    Decimal?       @db.Decimal(12, 2)
   visits       Visit[]
   pings        LocationPing[]
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 
   @@unique([userId, date])
   @@index([date])

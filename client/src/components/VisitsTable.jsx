@@ -22,7 +22,7 @@ export default function VisitsTable({ state, showRep = false, onOpen, onPage, em
               <thead className="border-b border-slate-100 bg-slate-50/60">
                 <tr>
                   <th className="th">Business</th>
-                  {showRep && <th className="th">Field Visitor</th>}
+                  {showRep && <th className="th">Representative</th>}
                   <th className="th">Category / Product</th>
                   <th className="th">Location</th>
                   <th className="th">Status</th>

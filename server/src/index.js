@@ -53,15 +53,24 @@ app.use('/api/dashboard', requireAuth, dashboardRoutes);
 app.use('/api/org', requireAuth, orgRoutes);
 app.use('/api/exports', requireAuth, exportRoutes);
 
-// Uploaded files (DL photos) – admin only
+// Uploaded files (DL photos) – admin, or manager for own employees
 const uploadRoot = path.resolve(config.uploadDir);
 app.get('/uploads/*', (req, _res, next) => {
   if (!req.headers.authorization && req.query.token) req.headers.authorization = `Bearer ${req.query.token}`;
   next();
-}, requireAuth, requireRole('ADMIN'), (req, res, next) => {
-  const file = path.resolve(uploadRoot, req.params[0]);
-  if (!file.startsWith(uploadRoot) || !fs.existsSync(file)) return next();
-  res.sendFile(file);
+}, requireAuth, requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
+  try {
+    const file = path.resolve(uploadRoot, req.params[0]);
+    if (!file.startsWith(uploadRoot) || !fs.existsSync(file)) return next();
+    if (req.user.role === 'MANAGER') {
+      // Managers may only open documents of their own employees
+      const owner = await prisma.user.findFirst({ where: { dlPhotoUrl: `/uploads/${req.params[0]}`, managerId: req.user.id }, select: { id: true } });
+      if (!owner) return res.status(404).end();
+    }
+    res.sendFile(file);
+  } catch (e) {
+    next(e);
+  }
 });
 
 // Optionally serve built client from same origin

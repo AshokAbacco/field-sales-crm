@@ -5,6 +5,7 @@ import { asyncHandler, HttpError, paginate, pageMeta } from '../lib/http.js';
 import { validate } from '../middleware/validate.js';
 import { localDate, dateStrRange } from '../lib/date.js';
 import { getFuelRate } from '../lib/settings.js';
+import { scopedUserWhere, canAccessUser } from '../lib/scope.js';
 
 const router = Router();
 
@@ -30,7 +31,6 @@ const pingSchema = z.object({
     .max(100),
 });
 
-const canSee = (req, shift) => req.user.role === 'ADMIN' || shift.userId === req.user.id;
 
 /** Current user's shift for today */
 router.get(
@@ -52,6 +52,7 @@ router.post(
   '/start',
   validate(startSchema),
   asyncHandler(async (req, res) => {
+    if (req.user.role !== 'FIELD_VISITOR') throw new HttpError(403, 'Only field employees punch in shifts');
     const today = localDate();
     const active = await prisma.shift.findFirst({ where: { userId: req.user.id, status: 'ACTIVE' } });
     if (active) throw new HttpError(409, active.date === today ? 'Your shift is already running' : `Please close your open shift from ${active.date} first`);
@@ -124,9 +125,8 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const pg = paginate(req.query);
-    const isAdmin = req.user.role === 'ADMIN';
     const where = {
-      ...(isAdmin ? req.query.userId && { userId: req.query.userId } : { userId: req.user.id }),
+      ...(await scopedUserWhere(req)),
       ...(req.query.status && { status: req.query.status }),
       ...(dateStrRange(req.query.from, req.query.to) && { date: dateStrRange(req.query.from, req.query.to) }),
     };
@@ -134,7 +134,7 @@ router.get(
       prisma.shift.count({ where }),
       prisma.shift.findMany({
         where,
-        include: { user: { select: { id: true, name: true, district: true, bikeName: true } }, _count: { select: { visits: true } } },
+        include: { user: { select: { id: true, name: true, district: true, bikeName: true, manager: { select: { name: true } } } }, _count: { select: { visits: true } } },
         orderBy: [{ date: 'desc' }, { startTime: 'desc' }],
         skip: pg.skip,
         take: pg.take,
@@ -157,7 +157,7 @@ router.get(
       where: { id: req.params.id },
       include: { user: { select: { id: true, name: true, bikeName: true } } },
     });
-    if (!shift || !canSee(req, shift)) throw new HttpError(404, 'Shift not found');
+    if (!shift || !(await canAccessUser(req, shift.userId))) throw new HttpError(404, 'Shift not found');
     const [pings, visits] = await Promise.all([
       prisma.locationPing.findMany({
         where: { shiftId: shift.id },

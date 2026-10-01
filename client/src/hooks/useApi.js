@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, errMsg } from '../api/client.js';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, errMsg } from "../api/client.js";
 
 /** GET helper with params, loading/error state and refetch */
 export function useApi(url, params, { enabled = true, interval } = {}) {

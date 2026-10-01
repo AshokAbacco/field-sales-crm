@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { asyncHandler, HttpError, paginate, pageMeta } from '../lib/http.js';
 import { validate } from '../middleware/validate.js';
 import { dateRange, localDate, startOfLocalDay, addDays } from '../lib/date.js';
+import { scopedUserWhere, canAccessUser } from '../lib/scope.js';
 
 const router = Router();
 
@@ -32,11 +33,10 @@ const visitSchema = z.object({
 });
 const updateSchema = visitSchema.partial().extend({ adminNote: optStr(2000) });
 
-export function buildVisitWhere(req) {
-  const { q, status, category, userId, from, to, product, followUpDue } = req.query;
-  const isAdmin = req.user.role === 'ADMIN';
+export async function buildVisitWhere(req) {
+  const { q, status, category, from, to, product, followUpDue } = req.query;
   const where = {
-    ...(isAdmin ? userId && { userId } : { userId: req.user.id }),
+    ...(await scopedUserWhere(req)),
     ...(STATUSES.includes(status) && { status }),
     ...(CATEGORIES.includes(category) && { category }),
     ...(product && { product }),
@@ -61,14 +61,14 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const pg = paginate(req.query);
-    const where = buildVisitWhere(req);
+    const where = await buildVisitWhere(req);
     const sortField = ['visitedAt', 'companyName', 'nextFollowUp', 'status'].includes(req.query.sort) ? req.query.sort : 'visitedAt';
     const dir = req.query.dir === 'asc' ? 'asc' : 'desc';
     const [total, rows, byStatus] = await Promise.all([
       prisma.visit.count({ where }),
       prisma.visit.findMany({
         where,
-        include: { user: { select: { id: true, name: true } } },
+        include: { user: { select: { id: true, name: true, manager: { select: { name: true } } } } },
         orderBy: { [sortField]: dir },
         skip: pg.skip,
         take: pg.take,
@@ -87,7 +87,7 @@ router.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const visit = await prisma.visit.findUnique({ where: { id: req.params.id }, include: { user: { select: { id: true, name: true } } } });
-    if (!visit || (req.user.role !== 'ADMIN' && visit.userId !== req.user.id)) throw new HttpError(404, 'Visit not found');
+    if (!visit || !(await canAccessUser(req, visit.userId))) throw new HttpError(404, 'Visit not found');
     res.json({ visit });
   }),
 );
@@ -111,10 +111,10 @@ router.patch(
   validate(updateSchema),
   asyncHandler(async (req, res) => {
     const visit = await prisma.visit.findUnique({ where: { id: req.params.id } });
-    const isAdmin = req.user.role === 'ADMIN';
-    if (!visit || (!isAdmin && visit.userId !== req.user.id)) throw new HttpError(404, 'Visit not found');
+    if (!visit || !(await canAccessUser(req, visit.userId))) throw new HttpError(404, 'Visit not found');
     const data = { ...req.body };
-    if (!isAdmin) delete data.adminNote;
+    // Guidance notes are written by managers/admins only
+    if (req.user.role === 'FIELD_VISITOR') delete data.adminNote;
     // Strip undefined so partial updates don't clobber
     Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
     const updated = await prisma.visit.update({ where: { id: visit.id }, data, include: { user: { select: { id: true, name: true } } } });

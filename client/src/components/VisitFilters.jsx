@@ -42,7 +42,7 @@ export default function VisitFilters({ filters, setFilters, counts, reps }) {
           </select>
           {reps && (
             <select className="input !w-auto !py-2" value={filters.userId} onChange={(e) => set({ userId: e.target.value })} aria-label="Field visitor">
-              <option value="">All field visitors</option>
+              <option value="">All representatives</option>
               {reps.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}

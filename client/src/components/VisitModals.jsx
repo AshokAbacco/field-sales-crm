@@ -331,13 +331,13 @@ export function VisitDetailModal({ open, onClose, visit, isAdmin, onUpdated, onE
             </select>
           </div>
           {isAdmin ? (
-            <Field label="Admin note / guidance">
-              <textarea rows={3} className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Guidance for the field visitor" />
+            <Field label="Guidance for the representative">
+              <textarea rows={3} className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Offer 1 month free trial, call owner after 6 PM" />
             </Field>
           ) : (
             visit.adminNote && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm">
-                <p className="text-xs font-bold uppercase text-amber-700">Admin guidance</p>
+                <p className="text-xs font-bold uppercase text-amber-700">Manager guidance</p>
                 <p className="mt-1 text-amber-900">{visit.adminNote}</p>
               </div>
             )

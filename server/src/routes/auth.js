@@ -6,7 +6,7 @@ import { prisma } from '../lib/prisma.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { validate } from '../middleware/validate.js';
 import { requireAuth, signToken } from '../middleware/auth.js';
-import { publicUser } from './users.js';
+import { publicUser, userInclude } from './users.js';
 
 const router = Router();
 
@@ -31,7 +31,7 @@ router.post(
     const { email, password } = req.body;
     const user = await prisma.user.findUnique({
       where: { email },
-      include: { team: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } },
+      include: userInclude,
     });
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) throw new HttpError(401, 'Invalid email or password');
     if (!user.isActive) throw new HttpError(403, 'Your account is disabled. Contact your administrator.');
@@ -46,7 +46,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      include: { team: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } },
+      include: userInclude,
     });
     res.json({ user: publicUser(user) });
   }),
