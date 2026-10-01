@@ -1,26 +1,21 @@
-export const CATEGORIES = [
-  { value: "CAR_GARAGE", label: "Car Garage", product: "Motor Desk" },
-  { value: "BIKE_GARAGE", label: "Bike Garage", product: "Motor Desk" },
-  { value: "WASH_CENTER", label: "Wash Center", product: "Motor Desk" },
-  { value: "RESTAURANT", label: "Restaurant / Cafe", product: "RestoPOS" },
-  { value: "GROCERY", label: "Grocery / Supermarket", product: "SuperBill" },
-  { value: "OTHER", label: "Other", product: "Motor Desk" },
-];
+// Business categories, software products and plans are managed in Settings (see hooks/useCatalog.js)
 
-export const PRODUCTS = [
-  {
-    value: "Motor Desk",
-    desc: "Car & bike garages, wash centers – job cards, spares, SMS alerts",
-  },
-  {
-    value: "RestoPOS",
-    desc: "Restaurants, cafes & cloud kitchens – tables, KOT, split billing",
-  },
-  {
-    value: "SuperBill",
-    desc: "Grocery & supermarkets – barcode, weigh scales, GST",
-  },
+export const BILLING_CYCLES = [
+  { value: "MONTHLY", label: "Monthly", short: "/mo", months: 1 },
+  { value: "QUARTERLY", label: "Quarterly", short: "/qtr", months: 3 },
+  { value: "HALF_YEARLY", label: "Half-yearly", short: "/6 mo", months: 6 },
+  { value: "YEARLY", label: "Yearly", short: "/yr", months: 12 },
+  { value: "ONE_TIME", label: "One-time", short: " once", months: 0 },
 ];
+export const cycleMeta = (v) => BILLING_CYCLES.find((c) => c.value === v);
+/** Next payment date (YYYY-MM-DD) one billing cycle after `from` */
+export const nextPaymentFor = (cycle, from = new Date()) => {
+  const m = cycleMeta(cycle)?.months;
+  if (!m) return "";
+  const d = new Date(from);
+  d.setMonth(d.getMonth() + m);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 export const STATUSES = [
   {
@@ -50,8 +45,6 @@ export const STATUSES = [
 ];
 export const statusMeta = (v) =>
   STATUSES.find((s) => s.value === v) || STATUSES[0];
-export const categoryLabel = (v) =>
-  CATEGORIES.find((c) => c.value === v)?.label || v;
 
 export const STATES = [
   "Karnataka",

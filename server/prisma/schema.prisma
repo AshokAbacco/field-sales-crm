@@ -20,13 +20,12 @@ enum VisitStatus {
   LEAVE_OUT
 }
 
-enum BusinessCategory {
-  CAR_GARAGE
-  BIKE_GARAGE
-  WASH_CENTER
-  RESTAURANT
-  GROCERY
-  OTHER
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+  ONE_TIME
 }
 
 enum ShiftStatus {
@@ -35,34 +34,35 @@ enum ShiftStatus {
 }
 
 model User {
-  id           String         @id @default(cuid())
-  name         String
-  email        String         @unique
-  passwordHash String
-  role         Role           @default(FIELD_VISITOR)
-  phone        String?
-  employeeCode String?        @unique
-  state        String?
-  district     String?
-  bikeName     String?
-  bikeMileage  Float?
-  dlNumber     String?
-  dlPhotoUrl   String?
-  isActive     Boolean        @default(true)
-  lastLoginAt  DateTime?
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String
+  role          Role      @default(FIELD_VISITOR)
+  phone         String?
+  employeeCode  String?   @unique
+  state         String?
+  district      String?
+  bikeName      String?
+  bikeMileage   Float?
+  dlNumber      String?
+  dlPhotoUrl    String?
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
   /// Reporting manager (for FIELD_VISITOR employees)
-  managerId    String?
-  manager      User?          @relation("ReportsTo", fields: [managerId], references: [id], onDelete: SetNull)
-  reports      User[]         @relation("ReportsTo")
+  managerId     String?
+  manager       User?     @relation("ReportsTo", fields: [managerId], references: [id], onDelete: SetNull)
+  reports       User[]    @relation("ReportsTo")
   /// Team led by this user (for MANAGER)
-  managedTeam  Team?          @relation("TeamManager")
-  zoneId       String?
-  zone         Zone?          @relation(fields: [zoneId], references: [id], onDelete: SetNull)
-  shifts       Shift[]
-  visits       Visit[]
-  pings        LocationPing[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  managedTeam   Team?     @relation("TeamManager")
+  plansCreated  Plan[]    @relation("PlanCreatedBy")
+  zoneId        String?
+  zone          Zone?     @relation(fields: [zoneId], references: [id], onDelete: SetNull)
+  shifts        Shift[]
+  visits        Visit[]
+  pings         LocationPing[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([role, isActive])
   @@index([managerId])
@@ -98,13 +98,13 @@ model Team {
 }
 
 model Shift {
-  id           String         @id @default(cuid())
+  id           String      @id @default(cuid())
   userId       String
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// Local business date (YYYY-MM-DD) in APP_TIMEZONE
   date         String
-  status       ShiftStatus    @default(ACTIVE)
-  startTime    DateTime       @default(now())
+  status       ShiftStatus @default(ACTIVE)
+  startTime    DateTime    @default(now())
   startKm      Float
   startLat     Float?
   startLng     Float?
@@ -115,12 +115,12 @@ model Shift {
   endLng       Float?
   endAddress   String?
   distanceKm   Float?
-  fuelRate     Decimal?       @db.Decimal(8, 2)
-  allowance    Decimal?       @db.Decimal(12, 2)
+  fuelRate     Decimal?    @db.Decimal(8, 2)
+  allowance    Decimal?    @db.Decimal(12, 2)
   visits       Visit[]
   pings        LocationPing[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   @@unique([userId, date])
   @@index([date])
@@ -133,8 +133,18 @@ model Visit {
   user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   shiftId       String?
   shift         Shift?           @relation(fields: [shiftId], references: [id], onDelete: SetNull)
-  category      BusinessCategory
+  categoryId    String
+  category      Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  /// Product name snapshot (kept even if the product is renamed/removed)
   product       String
+  productId     String?
+  productRef    Product?         @relation(fields: [productId], references: [id], onDelete: SetNull)
+  /// Subscription sold (for DEAL_DONE) – snapshots keep history stable
+  planId          String?
+  plan            Plan?          @relation(fields: [planId], references: [id], onDelete: SetNull)
+  planName        String?
+  billingCycle    BillingCycle?
+  nextPaymentDate DateTime?
   companyName   String
   contactPerson String?
   phone         String
@@ -144,6 +154,7 @@ model Visit {
   lat           Float?
   lng           Float?
   odometerKm    Float?
+  /// Plan amount agreed with the client
   dealValue     Decimal?         @db.Decimal(14, 2)
   nextFollowUp  DateTime?
   notes         String?
@@ -156,6 +167,8 @@ model Visit {
   @@index([status])
   @@index([visitedAt])
   @@index([nextFollowUp])
+  @@index([categoryId])
+  @@index([nextPaymentDate])
 }
 
 model LocationPing {
@@ -177,4 +190,51 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+/// Business categories shown in the visit form (managed by Admin in Settings)
+model Category {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  defaultProductId String?
+  defaultProduct   Product? @relation("CategoryDefaultProduct", fields: [defaultProductId], references: [id], onDelete: SetNull)
+  sortOrder        Int      @default(0)
+  isActive         Boolean  @default(true)
+  visits           Visit[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+/// Software products pitched (managed by Admin in Settings)
+model Product {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  plans       Plan[]
+  categories  Category[] @relation("CategoryDefaultProduct")
+  visits      Visit[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+/// Subscription plans with price (managed by Admin and Managers in Settings)
+model Plan {
+  id           String       @id @default(cuid())
+  name         String
+  productId    String?
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  price        Decimal      @db.Decimal(14, 2)
+  billingCycle BillingCycle @default(MONTHLY)
+  description  String?
+  isActive     Boolean      @default(true)
+  createdById  String?
+  createdBy    User?        @relation("PlanCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  visits       Visit[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([name, productId])
+  @@index([productId, isActive])
 }

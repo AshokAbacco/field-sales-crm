@@ -7,6 +7,73 @@ const tz = process.env.APP_TIMEZONE || "Asia/Kolkata";
 const localDate = (d) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(d);
 
+/**
+ * Default categories & products. The `catalog_plans` migration inserts the same rows, but
+ * `prisma db push` does not run migration SQL – so the seed makes sure they exist either way.
+ * Upserts by name, so items already created/renamed in Settings are left untouched.
+ */
+const DEFAULT_PRODUCTS = [
+  [
+    "prod_motor_desk",
+    "Motor Desk",
+    "Car & bike garages, wash centers – job cards, spares, SMS alerts",
+  ],
+  [
+    "prod_restopos",
+    "RestoPOS",
+    "Restaurants, cafes & cloud kitchens – tables, KOT, split billing",
+  ],
+  [
+    "prod_superbill",
+    "SuperBill",
+    "Grocery & supermarkets – barcode, weigh scales, GST",
+  ],
+];
+const DEFAULT_CATEGORIES = [
+  ["cat_car_garage", "Car Garage", "Motor Desk"],
+  ["cat_bike_garage", "Bike Garage", "Motor Desk"],
+  ["cat_wash_center", "Wash Center", "Motor Desk"],
+  ["cat_restaurant", "Restaurant / Cafe", "RestoPOS"],
+  ["cat_grocery", "Grocery / Supermarket", "SuperBill"],
+  ["cat_other", "Other", null],
+];
+
+async function ensureCatalog() {
+  if ((await prisma.product.count()) === 0) {
+    for (const [i, [id, name, description]] of DEFAULT_PRODUCTS.entries()) {
+      await prisma.product.upsert({
+        where: { name },
+        update: {},
+        create: { id, name, description, sortOrder: i + 1 },
+      });
+    }
+  }
+  const products = Object.fromEntries(
+    (await prisma.product.findMany()).map((p) => [p.name, p.id]),
+  );
+  if ((await prisma.category.count()) === 0) {
+    for (const [i, [id, name, productName]] of DEFAULT_CATEGORIES.entries()) {
+      await prisma.category.upsert({
+        where: { name },
+        update: {},
+        create: {
+          id,
+          name,
+          sortOrder: i + 1,
+          defaultProductId: productName ? products[productName] || null : null,
+        },
+      });
+    }
+  }
+  const categories = Object.fromEntries(
+    (await prisma.category.findMany()).map((c) => [c.name, c.id]),
+  );
+  console.log(
+    `Catalog ready: ${Object.keys(categories).length} categories, ${Object.keys(products).length} products`,
+  );
+  return { products, categories };
+}
+
 async function main() {
   const adminEmail = (
     process.env.SEED_ADMIN_EMAIL || "admin@company.com"
@@ -32,6 +99,7 @@ async function main() {
     },
   });
   console.log(`Admin ready: ${adminEmail} / ${adminPass}`);
+  const catalog = await ensureCatalog();
 
   if (process.env.SEED_DEMO_DATA !== "true") return;
   if (
@@ -146,14 +214,42 @@ async function main() {
     );
   }
 
+  // Sample plans for the default products
+  const plans = {};
+  const pid = (name) => catalog.products[name] || null;
+  const cid = (name) =>
+    catalog.categories[name] ||
+    catalog.categories.Other ||
+    Object.values(catalog.categories)[0];
+  for (const [productName, name, price, billingCycle] of [
+    ["Motor Desk", "Garage Starter", 999, "MONTHLY"],
+    ["Motor Desk", "Garage Pro", 9999, "YEARLY"],
+    ["RestoPOS", "Resto Basic", 1499, "MONTHLY"],
+    ["RestoPOS", "Resto Annual", 14999, "YEARLY"],
+    ["SuperBill", "SuperBill Store", 11999, "YEARLY"],
+  ]) {
+    const productId = pid(productName);
+    if (!productId) continue;
+    const plan = await prisma.plan.upsert({
+      where: { name_productId: { name, productId } },
+      update: {},
+      create: { name, productId, price, billingCycle },
+    });
+    plans[productId] ||= plan;
+  }
   const businesses = [
-    ["Speed Auto Garage", "CAR_GARAGE", "Motor Desk"],
-    ["Shine Car Wash", "WASH_CENTER", "Motor Desk"],
-    ["Biryani House", "RESTAURANT", "RestoPOS"],
-    ["Fresh Mart", "GROCERY", "SuperBill"],
-    ["Royal Bike Care", "BIKE_GARAGE", "Motor Desk"],
-    ["Cafe Mocha", "RESTAURANT", "RestoPOS"],
-  ];
+    ["Speed Auto Garage", "Car Garage", "Motor Desk"],
+    ["Shine Car Wash", "Wash Center", "Motor Desk"],
+    ["Biryani House", "Restaurant / Cafe", "RestoPOS"],
+    ["Fresh Mart", "Grocery / Supermarket", "SuperBill"],
+    ["Royal Bike Care", "Bike Garage", "Motor Desk"],
+    ["Cafe Mocha", "Restaurant / Cafe", "RestoPOS"],
+  ].map(([name, category, product]) => [
+    name,
+    cid(category),
+    pid(product),
+    product,
+  ]);
   const statuses = ["OPEN", "FOLLOW_UP", "DEAL_DONE", "LEAVE_OUT"];
   const base = { lat: 12.9279, lng: 77.6271 };
 
@@ -185,8 +281,9 @@ async function main() {
       });
       const pings = [];
       for (let k = 0; k < 3; k++) {
-        const [name, category, product] =
+        const [name, categoryId, productId, product] =
           businesses[(day + ri + k) % businesses.length];
+        const plan = plans[productId];
         const status = statuses[(day + ri + k) % 4];
         const lat = base.lat + ri * 0.012 + (k + 1) * 0.008;
         const lng = base.lng + (k + 1) * 0.006 * (k % 2 ? -1 : 1);
@@ -203,7 +300,8 @@ async function main() {
             userId: rep.id,
             shiftId: shift.id,
             companyName: `${name} ${day}${ri}`,
-            category,
+            categoryId,
+            productId,
             product,
             status,
             phone: `9000${day}${ri}${k}1234`,
@@ -213,7 +311,15 @@ async function main() {
             lng,
             visitedAt,
             odometerKm: startKm + (k + 1) * 6,
-            dealValue: status === "DEAL_DONE" ? 15000 : null,
+            ...(status === "DEAL_DONE" && !plan && { dealValue: 15000 }),
+            ...(status === "DEAL_DONE" &&
+              plan && {
+                planId: plan.id,
+                planName: plan.name,
+                billingCycle: plan.billingCycle,
+                dealValue: plan.price,
+                nextPaymentDate: new Date(Date.now() + (k * 3 - 2) * 86400000),
+              }),
             nextFollowUp:
               status === "FOLLOW_UP"
                 ? new Date(Date.now() + (k - 1) * 86400000)
