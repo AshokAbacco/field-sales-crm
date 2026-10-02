@@ -131,7 +131,14 @@ router.get(
       orderBy: { name: "asc" },
     });
     const ids = reps.map((r) => r.id);
+    // Leads owned by managers themselves (self-uploaded clients) count towards team totals
+    const mgrs = await prisma.user.findMany({
+      where: { role: "MANAGER", ...(managerFilter && { id: managerFilter }) },
+      select: { id: true },
+    });
+    const mgrIds = mgrs.map((m) => m.id);
     const inScope = { userId: { in: ids } };
+    const ownerScope = { userId: { in: [...ids, ...mgrIds] } };
     const vRange = dateRange(from, to);
     const sRange = dateStrRange(from, to);
 
@@ -144,6 +151,8 @@ router.get(
       followUpsDue,
       teams,
       paymentsDue,
+      mgrStatus,
+      mgrRev,
     ] = await Promise.all([
       prisma.visit.groupBy({
         by: ["userId", "status"],
@@ -168,7 +177,7 @@ router.get(
       }),
       prisma.visit.count({
         where: {
-          ...inScope,
+          ...ownerScope,
           status: "FOLLOW_UP",
           nextFollowUp: { lt: startOfLocalDay(addDays(today, 1)) },
         },
@@ -183,14 +192,52 @@ router.get(
       }),
       prisma.visit.aggregate({
         where: {
-          ...inScope,
+          ...ownerScope,
           status: "DEAL_DONE",
           nextPaymentDate: { lt: startOfLocalDay(addDays(today, 8)) },
         },
         _count: true,
         _sum: { dealValue: true },
       }),
+      mgrIds.length
+        ? prisma.visit.groupBy({
+            by: ["userId", "status"],
+            where: { userId: { in: mgrIds }, visitedAt: vRange },
+            _count: true,
+          })
+        : [],
+      mgrIds.length
+        ? prisma.visit.groupBy({
+            by: ["userId"],
+            where: {
+              userId: { in: mgrIds },
+              visitedAt: vRange,
+              status: "DEAL_DONE",
+            },
+            _sum: { dealValue: true },
+          })
+        : [],
     ]);
+    const mgrOwn = {};
+    for (const r of mgrStatus) {
+      const m = (mgrOwn[r.userId] ||= {
+        visits: 0,
+        deals: 0,
+        revenue: 0,
+        byStatus: {},
+      });
+      m.visits += r._count;
+      m.byStatus[r.status] = r._count;
+      if (r.status === "DEAL_DONE") m.deals += r._count;
+    }
+    for (const r of mgrRev)
+      (mgrOwn[r.userId] ||= {
+        visits: 0,
+        deals: 0,
+        revenue: 0,
+        byStatus: {},
+      }).revenue = Number(r._sum.dealValue || 0);
+    const mgrSum = (f) => Object.values(mgrOwn).reduce((a, m) => a + f(m), 0);
 
     const statusBy = {};
     for (const r of byRepStatus)
@@ -249,10 +296,13 @@ router.get(
     const sum = (arr, k) => arr.reduce((a, x) => a + (x[k] || 0), 0);
     const active = repStats.filter((r) => r.isActive);
     const pipeline = {
-      OPEN: sum(repStats, "open"),
-      FOLLOW_UP: sum(repStats, "followUps"),
-      DEAL_DONE: sum(repStats, "deals"),
-      LEAVE_OUT: sum(repStats, "leaveOut"),
+      OPEN: sum(repStats, "open") + mgrSum((m) => m.byStatus.OPEN || 0),
+      FOLLOW_UP:
+        sum(repStats, "followUps") + mgrSum((m) => m.byStatus.FOLLOW_UP || 0),
+      DEAL_DONE:
+        sum(repStats, "deals") + mgrSum((m) => m.byStatus.DEAL_DONE || 0),
+      LEAVE_OUT:
+        sum(repStats, "leaveOut") + mgrSum((m) => m.byStatus.LEAVE_OUT || 0),
     };
     pipeline.total =
       pipeline.OPEN +
@@ -271,9 +321,16 @@ router.get(
         manager: t.manager,
         zone: t.zone?.name || null,
         members: members.length,
-        visits: sum(members, "visits"),
-        deals: sum(members, "deals"),
-        revenue: sum(members, "revenue"),
+        visits: sum(members, "visits") + (mgrOwn[t.managerId]?.visits || 0),
+        deals: sum(members, "deals") + (mgrOwn[t.managerId]?.deals || 0),
+        revenue: sum(members, "revenue") + (mgrOwn[t.managerId]?.revenue || 0),
+        managerOwn: mgrOwn[t.managerId]
+          ? {
+              visits: mgrOwn[t.managerId].visits,
+              deals: mgrOwn[t.managerId].deals,
+              revenue: mgrOwn[t.managerId].revenue,
+            }
+          : null,
         km: Math.round(sum(members, "km") * 10) / 10,
         visitsTarget: t.visitsTarget,
         dealsTarget: t.dealsTarget,
@@ -293,7 +350,12 @@ router.get(
         pending: Math.max(0, active.length - onField - completed),
       },
       pipeline,
-      revenue: sum(repStats, "revenue"),
+      revenue: sum(repStats, "revenue") + mgrSum((m) => m.revenue),
+      managerLeads: {
+        visits: mgrSum((m) => m.visits),
+        deals: mgrSum((m) => m.deals),
+        revenue: mgrSum((m) => m.revenue),
+      },
       fleet: {
         distanceKm: Math.round(sum(repStats, "km") * 10) / 10,
         allowance: Math.round(sum(repStats, "allowance") * 100) / 100,

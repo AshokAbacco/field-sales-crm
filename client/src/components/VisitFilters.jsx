@@ -3,7 +3,13 @@ import { STATUSES } from "../utils/constants.js";
 import { useCatalog } from "../hooks/useCatalog.js";
 import { DateRange } from "./ui.jsx";
 
-export default function VisitFilters({ filters, setFilters, counts, reps }) {
+export default function VisitFilters({
+  filters,
+  setFilters,
+  counts,
+  reps,
+  showSource = false,
+}) {
   const { categories, products } = useCatalog();
   const set = (patch) => setFilters((f) => ({ ...f, ...patch, page: 1 }));
   const hasAny =
@@ -11,6 +17,7 @@ export default function VisitFilters({ filters, setFilters, counts, reps }) {
     filters.status ||
     filters.categoryId ||
     filters.productId ||
+    filters.source ||
     filters.userId ||
     filters.from ||
     filters.to;
@@ -82,6 +89,19 @@ export default function VisitFilters({ filters, setFilters, counts, reps }) {
               </option>
             ))}
           </select>
+          {showSource && (
+            <select
+              className="input !w-auto !py-2"
+              value={filters.source || ""}
+              onChange={(e) => set({ source: e.target.value })}
+              aria-label="Source"
+            >
+              <option value="">All sources</option>
+              <option value="FIELD_VISIT">Field visits</option>
+              <option value="IMPORT">Imported clients</option>
+              <option value="MANUAL">Added manually</option>
+            </select>
+          )}
           {reps && (
             <select
               className="input !w-auto !py-2"
@@ -113,6 +133,7 @@ export default function VisitFilters({ filters, setFilters, counts, reps }) {
                   status: "",
                   categoryId: "",
                   productId: "",
+                  source: "",
                   userId: "",
                   from: "",
                   to: "",

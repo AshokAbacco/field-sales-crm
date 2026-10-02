@@ -9,6 +9,13 @@ import {
 import { cycleMeta } from "../utils/constants.js";
 import { fmtDate, fmtDateTime, fmtINR, mapsLink } from "../utils/format.js";
 
+const SourceTag = ({ v }) =>
+  v.source && v.source !== "FIELD_VISIT" ? (
+    <span className="ml-1.5 rounded bg-violet-50 px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase text-violet-700 ring-1 ring-inset ring-violet-200">
+      {v.source === "IMPORT" ? "Imported" : "Added"}
+    </span>
+  ) : null;
+
 export default function VisitsTable({
   state,
   showRep = false,
@@ -64,6 +71,7 @@ export default function VisitsTable({
                     <td className="td">
                       <p className="font-semibold text-slate-900">
                         {v.companyName}
+                        <SourceTag v={v} />
                       </p>
                       <p className="text-xs text-slate-500">
                         {v.contactPerson ? `${v.contactPerson} · ` : ""}
@@ -149,7 +157,10 @@ export default function VisitsTable({
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="truncate font-semibold">{v.companyName}</p>
+                      <p className="truncate font-semibold">
+                        {v.companyName}
+                        <SourceTag v={v} />
+                      </p>
                       <StatusBadge status={v.status} />
                     </div>
                     <p className="mt-0.5 truncate text-xs text-slate-500">

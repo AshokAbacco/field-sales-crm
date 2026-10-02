@@ -60,14 +60,27 @@ export const fileUrl = (path) =>
     : null;
 
 /** Download a server export as a file */
-export async function downloadExport(type, format, params = {}) {
-  const res = await api.get(`/exports/${type}`, {
-    params: { ...params, format },
+export function downloadExport(type, format, params = {}) {
+  return downloadFile(
+    `/exports/${type}`,
+    { ...params, format },
+    `${type}.${format}`,
+  );
+}
+
+/** Download any authenticated API file response */
+export async function downloadFile(
+  path,
+  params = {},
+  fallbackName = "download",
+) {
+  const res = await api.get(path, {
+    params,
     responseType: "blob",
     timeout: 300000,
   });
   const cd = res.headers["content-disposition"] || "";
-  const name = /filename="?([^"]+)"?/.exec(cd)?.[1] || `${type}.${format}`;
+  const name = /filename="?([^"]+)"?/.exec(cd)?.[1] || fallbackName;
   const url = URL.createObjectURL(res.data);
   const a = document.createElement("a");
   a.href = url;

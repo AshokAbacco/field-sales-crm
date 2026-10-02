@@ -18,6 +18,8 @@ import dashboardRoutes from "./routes/dashboard.js";
 import orgRoutes from "./routes/org.js";
 import exportRoutes from "./routes/exports.js";
 import catalogRoutes from "./routes/catalog.js";
+import leadRoutes from "./routes/leads.js";
+import incentiveRoutes from "./routes/incentives.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -69,6 +71,8 @@ app.use("/api/dashboard", requireAuth, dashboardRoutes);
 app.use("/api/org", requireAuth, orgRoutes);
 app.use("/api/exports", requireAuth, exportRoutes);
 app.use("/api/catalog", requireAuth, catalogRoutes);
+app.use("/api/leads", requireAuth, leadRoutes);
+app.use("/api/incentives", requireAuth, incentiveRoutes);
 
 // Uploaded files (DL photos) – admin, or manager for own employees
 const uploadRoot = path.resolve(config.uploadDir);

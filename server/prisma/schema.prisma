@@ -20,6 +20,28 @@ enum VisitStatus {
   LEAVE_OUT
 }
 
+enum LeadSource {
+  FIELD_VISIT
+  IMPORT
+  MANUAL
+}
+
+/// How an incentive rule pays out
+enum IncentiveType {
+  /// ₹ rate for every qualifying deal
+  PER_DEAL
+  /// rate % of the plan amount
+  PERCENT_OF_AMOUNT
+  /// ₹ rate for every `every` deals (e.g. 10 deals → ₹1000)
+  PER_DEAL_COUNT
+  /// ₹ rate for every ₹`every` of plan amount (e.g. every ₹1000 → ₹100)
+  PER_AMOUNT_SLAB
+  /// one-time ₹ rate when deals in the month reach `every`
+  DEAL_TARGET_BONUS
+  /// one-time ₹ rate when plan amount in the month reaches ₹`every`
+  REVENUE_TARGET_BONUS
+}
+
 enum BillingCycle {
   MONTHLY
   QUARTERLY
@@ -59,7 +81,10 @@ model User {
   zoneId        String?
   zone          Zone?     @relation(fields: [zoneId], references: [id], onDelete: SetNull)
   shifts        Shift[]
-  visits        Visit[]
+  visits        Visit[]   @relation("VisitOwner")
+  visitsCreated Visit[]   @relation("VisitCreatedBy")
+  payouts       IncentivePayout[] @relation("PayoutUser")
+  payoutsMade   IncentivePayout[] @relation("PayoutPaidBy")
   pings         LocationPing[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -129,8 +154,14 @@ model Shift {
 
 model Visit {
   id            String           @id @default(cuid())
+  /// Owner of the lead / visit (field employee or manager) – gets the incentive credit
   userId        String
-  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User             @relation("VisitOwner", fields: [userId], references: [id], onDelete: Cascade)
+  source        LeadSource       @default(FIELD_VISIT)
+  createdById   String?
+  createdBy     User?            @relation("VisitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  /// When the visit became DEAL_DONE – incentives are counted by this date
+  dealClosedAt  DateTime?
   shiftId       String?
   shift         Shift?           @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   categoryId    String
@@ -169,6 +200,8 @@ model Visit {
   @@index([nextFollowUp])
   @@index([categoryId])
   @@index([nextPaymentDate])
+  @@index([status, dealClosedAt])
+  @@index([source])
 }
 
 model LocationPing {
@@ -201,6 +234,7 @@ model Category {
   sortOrder        Int      @default(0)
   isActive         Boolean  @default(true)
   visits           Visit[]
+  incentiveRules   IncentiveRule[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -215,6 +249,7 @@ model Product {
   plans       Plan[]
   categories  Category[] @relation("CategoryDefaultProduct")
   visits      Visit[]
+  incentiveRules IncentiveRule[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 }
@@ -232,9 +267,64 @@ model Plan {
   createdById  String?
   createdBy    User?        @relation("PlanCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   visits       Visit[]
+  incentiveRules IncentiveRule[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
   @@unique([name, productId])
   @@index([productId, isActive])
+}
+
+/// Incentive rules – managed by Admin only. Calculated per calendar month on DEAL_DONE visits.
+model IncentiveRule {
+  id            String        @id @default(cuid())
+  name          String
+  description   String?
+  /// FIELD_VISITOR → own deals · MANAGER → team deals (own + reporting employees)
+  appliesTo     Role          @default(FIELD_VISITOR)
+  type          IncentiveType @default(PER_DEAL)
+  /// ₹ amount, or % for PERCENT_OF_AMOUNT
+  rate          Decimal       @db.Decimal(14, 2)
+  /// deal count or ₹ amount for slab / target types
+  every         Decimal?      @db.Decimal(14, 2)
+  /// rule pays only when the month has at least this many qualifying deals
+  minDeals      Int?
+  /// cap per person per month
+  maxPayout     Decimal?      @db.Decimal(14, 2)
+  /// optional filters – null means "all"
+  planId        String?
+  plan          Plan?         @relation(fields: [planId], references: [id], onDelete: SetNull)
+  productId     String?
+  product       Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  categoryId    String?
+  category      Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// YYYY-MM-DD validity window (inclusive), null = open
+  effectiveFrom String?
+  effectiveTo   String?
+  isActive      Boolean       @default(true)
+  sortOrder     Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([isActive, appliesTo])
+}
+
+/// Monthly incentive payout recorded by Admin
+model IncentivePayout {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation("PayoutUser", fields: [userId], references: [id], onDelete: Cascade)
+  /// YYYY-MM
+  month      String
+  /// amount actually paid (may include manual adjustment)
+  amount     Decimal  @db.Decimal(14, 2)
+  /// system-calculated amount at the time of payment
+  calculated Decimal  @db.Decimal(14, 2)
+  note       String?
+  paidAt     DateTime @default(now())
+  paidById   String?
+  paidBy     User?    @relation("PayoutPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, month])
+  @@index([month])
 }

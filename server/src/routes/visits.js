@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError, paginate, pageMeta } from "../lib/http.js";
 import { validate } from "../middleware/validate.js";
 import { dateRange, localDate, startOfLocalDay, addDays } from "../lib/date.js";
-import { scopedUserWhere, canAccessUser } from "../lib/scope.js";
+import { scopedUserWhere, canAccessUser, canAssignTo } from "../lib/scope.js";
 
 const router = Router();
 
@@ -39,7 +39,7 @@ const optId = z
   .nullable()
   .transform((v) => (v ? v : null));
 
-const visitSchema = z.object({
+export const visitSchema = z.object({
   categoryId: z
     .string({ required_error: "Select a business category" })
     .trim()
@@ -78,20 +78,31 @@ const visitSchema = z.object({
   nextFollowUp: optDate,
   notes: optStr(2000),
 });
-const updateSchema = visitSchema.partial().extend({ adminNote: optStr(2000) });
+const updateSchema = visitSchema
+  .partial()
+  .extend({
+    adminNote: optStr(2000),
+    userId: z.string().trim().min(1).optional(),
+  });
 
 export const visitInclude = {
   user: {
-    select: { id: true, name: true, manager: { select: { name: true } } },
+    select: {
+      id: true,
+      name: true,
+      role: true,
+      manager: { select: { name: true } },
+    },
   },
   category: { select: { id: true, name: true } },
+  createdBy: { select: { id: true, name: true } },
 };
 
 /**
  * Validate catalog references and fill snapshot fields (product name, plan name, cycle).
  * Inactive items are rejected for new selections but allowed when unchanged on edit.
  */
-async function resolveCatalog(data, existing) {
+export async function resolveCatalog(data, existing) {
   if (
     data.categoryId !== undefined &&
     data.categoryId !== existing?.categoryId
@@ -124,6 +135,11 @@ async function resolveCatalog(data, existing) {
       data.planName = null;
     }
   }
+  // Track when a deal was closed – incentives are counted by this date
+  if (data.status !== undefined && data.status !== existing?.status) {
+    if (data.status === "DEAL_DONE") data.dealClosedAt = new Date();
+    else if (existing?.status === "DEAL_DONE") data.dealClosedAt = null;
+  }
   const status = data.status ?? existing?.status;
   if (status === "DEAL_DONE") {
     const value =
@@ -145,8 +161,10 @@ export async function buildVisitWhere(req) {
     to,
     followUpDue,
     paymentDue,
+    source,
   } = req.query;
   const where = {
+    ...(["FIELD_VISIT", "IMPORT", "MANUAL"].includes(source) && { source }),
     ...(await scopedUserWhere(req)),
     ...(STATUSES.includes(status) && { status }),
     ...(categoryId && { categoryId: String(categoryId) }),
@@ -244,7 +262,13 @@ router.post(
       throw new HttpError(400, "Start your day shift before logging a visit");
     const data = await resolveCatalog({ ...req.body });
     const visit = await prisma.visit.create({
-      data: { ...data, userId: req.user.id, shiftId: shift.id },
+      data: {
+        ...data,
+        userId: req.user.id,
+        shiftId: shift.id,
+        source: "FIELD_VISIT",
+        createdById: req.user.id,
+      },
       include: visitInclude,
     });
     if (data.lat != null && data.lng != null)
@@ -270,8 +294,17 @@ router.patch(
     if (!visit || !(await canAccessUser(req, visit.userId)))
       throw new HttpError(404, "Visit not found");
     const data = { ...req.body };
-    // Guidance notes are written by managers/admins only
-    if (req.user.role === "FIELD_VISITOR") delete data.adminNote;
+    // Guidance notes and reassignment are for managers/admins only
+    if (req.user.role === "FIELD_VISITOR") {
+      delete data.adminNote;
+      delete data.userId;
+    }
+    if (
+      data.userId &&
+      data.userId !== visit.userId &&
+      !(await canAssignTo(req, data.userId))
+    )
+      throw new HttpError(400, "You cannot assign this lead to that person");
     // Strip undefined so partial updates don't clobber
     Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
     await resolveCatalog(data, visit);

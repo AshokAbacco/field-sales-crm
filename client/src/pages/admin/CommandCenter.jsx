@@ -14,6 +14,7 @@ import {
   FiPhone,
   FiRefreshCw,
   FiUserPlus,
+  FiUploadCloud,
   FiBell,
   FiRadio,
   FiTarget,
@@ -41,6 +42,8 @@ import {
   VisitFormModal,
 } from "../../components/VisitModals.jsx";
 import { EmployeeDetailModal, EmployeeFormModal } from "./EmployeeModals.jsx";
+import LeadImportModal from "../../components/LeadImportModal.jsx";
+import { useAssignees } from "../../hooks/useAssignees.js";
 import { STATUSES } from "../../utils/constants.js";
 import {
   fmtINR,
@@ -314,6 +317,12 @@ export default function CommandCenter() {
   const [routeModal, setRouteModal] = useState(null);
   const [dossier, setDossier] = useState(null);
   const [editEmp, setEditEmp] = useState(null); // {employee} | {} for new
+  const [leadModal, setLeadModal] = useState(null); // 'add' | 'import'
+  const [recordsKey, setRecordsKey] = useState(0);
+  const leadsChanged = () => {
+    ov.refetch(true);
+    setRecordsKey((k) => k + 1);
+  };
   const [repSort, setRepSort] = useState("deals");
 
   useEffect(() => setRouteShiftId(null), [day, managerId]);
@@ -402,6 +411,20 @@ export default function CommandCenter() {
             />
           </div>
           <ExportMenu type="visits" params={exportParams} label="Export" />
+          <button
+            className="btn-secondary"
+            onClick={() => setLeadModal("add")}
+            title="Add a client you already have"
+          >
+            <FiUserPlus /> Add lead
+          </button>
+          <button
+            className="btn-success"
+            onClick={() => setLeadModal("import")}
+            title="Upload your existing clients from Excel / CSV"
+          >
+            <FiUploadCloud /> Import clients
+          </button>
           {!isAdmin && (
             <button className="btn-primary" onClick={() => setEditEmp({})}>
               <FiUserPlus /> Add Employee
@@ -894,6 +917,19 @@ export default function CommandCenter() {
         isAdmin={isAdmin}
         onRoute={setRouteModal}
         onChanged={() => ov.refetch(true)}
+        reloadKey={recordsKey}
+      />
+
+      <LeadImportModal
+        open={leadModal === "import"}
+        onClose={() => setLeadModal(null)}
+        onImported={leadsChanged}
+      />
+      <VisitFormModal
+        open={leadModal === "add"}
+        leadMode
+        onClose={() => setLeadModal(null)}
+        onSaved={leadsChanged}
       />
 
       <RouteModal
@@ -921,13 +957,22 @@ export default function CommandCenter() {
 }
 
 // ---------- records: visits / follow-ups / travel in one card ----------
-function Records({ range, managerId, reps, isAdmin, onRoute, onChanged }) {
+function Records({
+  range,
+  managerId,
+  reps,
+  isAdmin,
+  onRoute,
+  onChanged,
+  reloadKey,
+}) {
   const [tab, setTab] = useState("visits");
   const [filters, setFilters] = useState({
     q: "",
     status: "",
     categoryId: "",
     productId: "",
+    source: "",
     userId: "",
     from: range.from,
     to: range.to,
@@ -971,10 +1016,22 @@ function Records({ range, managerId, reps, isAdmin, onRoute, onChanged }) {
   );
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
+  const assignees = useAssignees();
+  // Managers can own leads too, so they appear in the owner filters
   const repOptions = useMemo(
-    () => reps.map((r) => ({ id: r.id, name: r.name, isActive: r.isActive })),
-    [reps],
+    () => [
+      ...assignees
+        .filter(
+          (a) => a.role === "MANAGER" && (!managerId || a.id === managerId),
+        )
+        .map((a) => ({ id: a.id, name: a.name, isActive: true })),
+      ...reps.map((r) => ({ id: r.id, name: r.name, isActive: r.isActive })),
+    ],
+    [reps, assignees, managerId],
   );
+  useEffect(() => {
+    if (reloadKey) visits.refetch(true);
+  }, [reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const refresh = () => {
     visits.refetch(true);
     onChanged();
@@ -983,7 +1040,7 @@ function Records({ range, managerId, reps, isAdmin, onRoute, onChanged }) {
   const { page, ...exportFilters } = { ...scope, ...filters, q };
 
   const tabs = [
-    ["visits", "Client visits & deals", FiMapPin],
+    ["visits", "Clients, visits & deals", FiMapPin],
     ["followups", "Follow-ups due", FiBell],
     ["payments", "Payments due", FiDollarSign],
     ["travel", "Travel, KM & reimbursement", FiTruck],
@@ -1034,6 +1091,7 @@ function Records({ range, managerId, reps, isAdmin, onRoute, onChanged }) {
               setFilters={setFilters}
               counts={visits.data?.statusCounts}
               reps={repOptions}
+              showSource
             />
             <VisitsTable
               state={visits}

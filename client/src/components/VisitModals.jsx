@@ -9,6 +9,7 @@ import {
   FiUser,
   FiFileText,
   FiCreditCard,
+  FiUserPlus,
 } from "react-icons/fi";
 import Modal from "./Modal.jsx";
 import LocationCapture from "./LocationCapture.jsx";
@@ -17,6 +18,7 @@ import { PointMap } from "./Maps.jsx";
 import { api, errMsg } from "../api/client.js";
 import { useCurrentLocation } from "../hooks/useGeo.js";
 import { useCatalog } from "../hooks/useCatalog.js";
+import { useAssignees } from "../hooks/useAssignees.js";
 import {
   STATUSES,
   BILLING_CYCLES,
@@ -174,8 +176,31 @@ export function PlanFields({
 }
 
 /** Create (field employee) or edit (owner/manager/admin) a visit */
-export function VisitFormModal({ open, onClose, visit, onSaved }) {
+/**
+ * Create / edit a visit.
+ * leadMode: Manager/Admin adds a client lead (no GPS / bike KM, can assign an owner) → POST /leads
+ */
+export function VisitFormModal({
+  open,
+  onClose,
+  visit,
+  onSaved,
+  leadMode = false,
+}) {
   const isEdit = !!visit;
+  const assignees = useAssignees(open && leadMode && !isEdit);
+  const [assignToId, setAssignToId] = useState("");
+  // Managers keep new leads themselves by default
+  useEffect(() => {
+    if (
+      open &&
+      leadMode &&
+      !isEdit &&
+      !assignToId &&
+      assignees[0]?.name?.endsWith("(me)")
+    )
+      setAssignToId(assignees[0].id);
+  }, [open, leadMode, isEdit, assignees]); // eslint-disable-line react-hooks/exhaustive-deps
   const geo = useCurrentLocation();
   const { categories, products, loading: catLoading } = useCatalog();
   const [form, setForm] = useState(EMPTY);
@@ -187,6 +212,7 @@ export function VisitFormModal({ open, onClose, visit, onSaved }) {
     if (!open) return;
     setErrors({});
     setLoc(null);
+    setAssignToId("");
     setForm(
       visit
         ? {
@@ -241,7 +267,12 @@ export function VisitFormModal({ open, onClose, visit, onSaved }) {
       er.companyName = "Business name is required";
     if (!/^[+\d][\d\s-]{6,18}$/.test(form.phone.trim()))
       er.phone = "Enter a valid phone number";
-    if (form.address.trim().length < 3) er.address = "Address is required";
+    const isLead =
+      leadMode || (isEdit && visit.source && visit.source !== "FIELD_VISIT");
+    if (!isLead && form.address.trim().length < 3)
+      er.address = "Address is required";
+    if (leadMode && !isEdit && !assignToId)
+      er.assignToId = "Choose who owns this lead";
     if (form.status === "FOLLOW_UP" && !form.nextFollowUp)
       er.nextFollowUp = "Pick a follow-up date";
     if (form.status === "DEAL_DONE" && form.dealValue === "")
@@ -276,13 +307,19 @@ export function VisitFormModal({ open, onClose, visit, onSaved }) {
     try {
       const { data } = isEdit
         ? await api.patch(`/visits/${visit.id}`, payload)
-        : await api.post("/visits", payload);
+        : leadMode
+          ? await api.post("/leads", { ...payload, odometerKm: "", assignToId })
+          : await api.post("/visits", payload);
       toast.success(
         isEdit
-          ? "Visit updated"
-          : deal
-            ? "Deal closed & visit logged 🎉"
-            : "Visit logged",
+          ? "Saved"
+          : leadMode
+            ? deal
+              ? "Client added as a closed deal 🎉"
+              : "Lead added"
+            : deal
+              ? "Deal closed & visit logged 🎉"
+              : "Visit logged",
       );
       onSaved?.(data.visit);
       onClose();
@@ -302,12 +339,20 @@ export function VisitFormModal({ open, onClose, visit, onSaved }) {
       onClose={onClose}
       busy={busy}
       size="lg"
-      icon={isEdit ? FiEdit2 : FiBriefcase}
-      title={isEdit ? "Edit Visit" : "Log Field Visit"}
+      icon={isEdit ? FiEdit2 : leadMode ? FiUserPlus : FiBriefcase}
+      title={
+        isEdit
+          ? "Edit Visit / Lead"
+          : leadMode
+            ? "Add Client / Lead"
+            : "Log Field Visit"
+      }
       subtitle={
         isEdit
           ? visit.companyName
-          : "Capture the business, pitch and outcome of this visit"
+          : leadMode
+            ? "Add a client you already have – keep it yourself or assign it to an employee"
+            : "Capture the business, pitch and outcome of this visit"
       }
       footer={
         <>
@@ -320,7 +365,8 @@ export function VisitFormModal({ open, onClose, visit, onSaved }) {
             Cancel
           </button>
           <button form="visit-form" className="btn-primary" disabled={busy}>
-            {busy && <Spinner />} {isEdit ? "Save changes" : "Save visit"}
+            {busy && <Spinner />}{" "}
+            {isEdit ? "Save changes" : leadMode ? "Save lead" : "Save visit"}
           </button>
         </>
       }
@@ -451,21 +497,48 @@ export function VisitFormModal({ open, onClose, visit, onSaved }) {
               placeholder="optional"
             />
           </Field>
-          <Field label="Bike KM at this visit">
-            <input
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.1"
-              className="input"
-              value={form.odometerKm}
-              onChange={set("odometerKm")}
-              placeholder="optional"
-            />
-          </Field>
+          {leadMode && !isEdit ? (
+            <Field
+              label="Owner (gets the incentive)"
+              required
+              error={errors.assignToId}
+            >
+              <select
+                className={inp("assignToId")}
+                value={assignToId}
+                onChange={(e) => (
+                  setAssignToId(e.target.value),
+                  setErrors((er) => ({ ...er, assignToId: null }))
+                )}
+              >
+                <option value="">Select owner</option>
+                {assignees.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            !leadMode &&
+            !(isEdit && visit.source && visit.source !== "FIELD_VISIT") && (
+              <Field label="Bike KM at this visit">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.1"
+                  className="input"
+                  value={form.odometerKm}
+                  onChange={set("odometerKm")}
+                  placeholder="optional"
+                />
+              </Field>
+            )
+          )}
           <Field
             label="Address"
-            required
+            required={!leadMode}
             error={errors.address}
             className="sm:col-span-2"
           >
@@ -479,7 +552,7 @@ export function VisitFormModal({ open, onClose, visit, onSaved }) {
           </Field>
         </div>
 
-        {open && !isEdit && (
+        {open && !isEdit && !leadMode && (
           <LocationCapture
             geo={geo}
             label="Visit location (GPS)"
@@ -542,6 +615,8 @@ export function VisitDetailModal({
   onUpdated,
   onEdit,
 }) {
+  const assignees = useAssignees(open && isAdmin);
+  const [owner, setOwner] = useState("");
   const [status, setStatus] = useState(visit?.status);
   const [note, setNote] = useState("");
   const [deal, setDeal] = useState({});
@@ -550,6 +625,7 @@ export function VisitDetailModal({
   useEffect(() => {
     if (visit) {
       setStatus(visit.status);
+      setOwner(visit.userId);
       setNote(visit.adminNote || "");
       setDealErr({});
       setDeal({
@@ -564,8 +640,11 @@ export function VisitDetailModal({
   if (!visit) return null;
 
   const closingDeal = status === "DEAL_DONE" && visit.status !== "DEAL_DONE";
+  const ownerChanged = isAdmin && owner && owner !== visit.userId;
   const dirty =
-    status !== visit.status || (isAdmin && note !== (visit.adminNote || ""));
+    status !== visit.status ||
+    ownerChanged ||
+    (isAdmin && note !== (visit.adminNote || ""));
   const save = async () => {
     if (closingDeal && deal.dealValue === "") {
       setDealErr({ dealValue: "Enter the plan amount" });
@@ -576,6 +655,7 @@ export function VisitDetailModal({
       const body = {
         status,
         ...(isAdmin && { adminNote: note }),
+        ...(ownerChanged && { userId: owner }),
         ...(closingDeal && deal),
       };
       const { data } = await api.patch(`/visits/${visit.id}`, body);
@@ -641,10 +721,30 @@ export function VisitDetailModal({
           <Row icon={FiMapPin} label="Address">
             {visit.address}
           </Row>
-          <Row icon={FiCalendar} label="Visited">
+          <Row
+            icon={FiCalendar}
+            label={
+              visit.source && visit.source !== "FIELD_VISIT"
+                ? "Added"
+                : "Visited"
+            }
+          >
             {fmtDateTime(visit.visitedAt)}
             {visit.user && (
-              <span className="block text-slate-500">by {visit.user.name}</span>
+              <span className="block text-slate-500">
+                Owner: {visit.user.name}
+              </span>
+            )}
+            {visit.source && visit.source !== "FIELD_VISIT" && (
+              <span className="block text-xs text-slate-500">
+                {visit.source === "IMPORT" ? "Imported" : "Added manually"}
+                {visit.createdBy ? ` by ${visit.createdBy.name}` : ""}
+              </span>
+            )}
+            {visit.dealClosedAt && (
+              <span className="block text-xs font-semibold text-emerald-700">
+                Deal closed {fmtDate(visit.dealClosedAt)}
+              </span>
             )}
           </Row>
           {visit.nextFollowUp && (
@@ -691,6 +791,29 @@ export function VisitDetailModal({
               ))}
             </select>
           </div>
+          {isAdmin && assignees.length > 0 && (
+            <Field
+              label="Owner"
+              hint="Reassign this lead – the owner gets the incentive when it converts"
+            >
+              <select
+                className="input"
+                value={owner}
+                onChange={(e) => setOwner(e.target.value)}
+              >
+                {!assignees.some((a) => a.id === visit.userId) && (
+                  <option value={visit.userId}>
+                    {visit.user?.name || "Current owner"}
+                  </option>
+                )}
+                {assignees.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           {isAdmin ? (
             <Field label="Guidance for the representative">
               <textarea

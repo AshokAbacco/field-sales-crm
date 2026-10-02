@@ -7,6 +7,7 @@ import { config } from "../lib/config.js";
 import { localDate, dateStrRange } from "../lib/date.js";
 import { buildVisitWhere } from "./visits.js";
 import { scopedUserWhere } from "../lib/scope.js";
+import { buildIncentiveReport } from "./incentives.js";
 
 const router = Router();
 router.use(requireRole("ADMIN", "MANAGER"));
@@ -41,8 +42,9 @@ const datasets = {
     title: "Field Visits",
     columns: [
       ["Visited At", 22],
-      ["Field Employee", 22],
+      ["Owner", 22],
       ["Manager", 20],
+      ["Source", 12],
       ["Business Name", 28],
       ["Category", 16],
       ["Product", 22],
@@ -53,6 +55,7 @@ const datasets = {
       ["Plan", 20],
       ["Billing Cycle", 14],
       ["Plan Amount (INR)", 16],
+      ["Deal Closed", 16],
       ["Next Payment", 16],
       ["Next Follow Up", 16],
       ["Address", 40],
@@ -83,6 +86,7 @@ const datasets = {
           fmtDateTime(v.visitedAt),
           v.user?.name,
           v.user?.manager?.name,
+          human(v.source),
           v.companyName,
           v.category?.name,
           v.product,
@@ -93,6 +97,7 @@ const datasets = {
           v.planName,
           human(v.billingCycle),
           v.dealValue != null ? Number(v.dealValue) : "",
+          fmtDate(v.dealClosedAt),
           fmtDate(v.nextPaymentDate),
           fmtDate(v.nextFollowUp),
           v.address,
@@ -235,6 +240,42 @@ const datasets = {
         cursor = batch[batch.length - 1].id;
       }
     },
+  },
+};
+
+// Incentive report (computed, not a table scan) – admin & manager scoped by the report builder
+datasets.incentives = {
+  title: "Incentives",
+  columns: [
+    ["Month", 10],
+    ["Name", 22],
+    ["Role", 14],
+    ["Manager", 20],
+    ["Basis", 10],
+    ["Deals", 8],
+    ["Plan Amount (INR)", 16],
+    ["Incentive (INR)", 14],
+    ["Breakdown", 70],
+    ["Paid (INR)", 12],
+    ["Paid On", 16],
+    ["Payout Note", 30],
+  ],
+  where: async (req) => buildIncentiveReport(req),
+  async *rows(report) {
+    yield report.rows.map((r) => [
+      report.month,
+      r.user.name,
+      r.user.role === "MANAGER" ? "Manager" : "Field Employee",
+      r.user.manager,
+      r.basis === "team" ? "Team" : "Own",
+      r.deals,
+      r.amount,
+      r.total,
+      r.lines.map((l) => `${l.name}: ₹${l.earned} (${l.explain})`).join(" | "),
+      r.payout ? r.payout.amount : "",
+      r.payout ? fmtDate(r.payout.paidAt) : "",
+      r.payout?.note,
+    ]);
   },
 };
 

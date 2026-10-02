@@ -237,6 +237,69 @@ async function main() {
     });
     plans[productId] ||= plan;
   }
+  // Sample incentive rules (edit or remove them in Incentives → Rules)
+  if ((await prisma.incentiveRule.count()) === 0) {
+    const garagePro =
+      Object.values(plans).find((p) => p.name === "Garage Starter") || null;
+    await prisma.incentiveRule.createMany({
+      data: [
+        {
+          name: "₹100 per deal",
+          description: "Every closed deal earns ₹100",
+          appliesTo: "FIELD_VISITOR",
+          type: "PER_DEAL",
+          rate: 100,
+          sortOrder: 1,
+        },
+        {
+          name: "10 deals bonus",
+          description: "₹1,000 for every 10 deals in a month",
+          appliesTo: "FIELD_VISITOR",
+          type: "PER_DEAL_COUNT",
+          rate: 1000,
+          every: 10,
+          sortOrder: 2,
+        },
+        {
+          name: "₹100 per ₹1,000 sold",
+          description: "Slab on plan amount",
+          appliesTo: "FIELD_VISITOR",
+          type: "PER_AMOUNT_SLAB",
+          rate: 100,
+          every: 1000,
+          isActive: false,
+          sortOrder: 3,
+        },
+        ...(garagePro
+          ? [
+              {
+                name: "Garage Starter push",
+                appliesTo: "FIELD_VISITOR",
+                type: "PER_DEAL",
+                rate: 50,
+                planId: garagePro.id,
+                sortOrder: 4,
+              },
+            ]
+          : []),
+        {
+          name: "Manager: 2% of team sales",
+          appliesTo: "MANAGER",
+          type: "PERCENT_OF_AMOUNT",
+          rate: 2,
+          sortOrder: 5,
+        },
+        {
+          name: "Manager: team target bonus",
+          appliesTo: "MANAGER",
+          type: "DEAL_TARGET_BONUS",
+          rate: 3000,
+          every: 8,
+          sortOrder: 6,
+        },
+      ],
+    });
+  }
   const businesses = [
     ["Speed Auto Garage", "Car Garage", "Motor Desk"],
     ["Shine Car Wash", "Wash Center", "Motor Desk"],
@@ -311,6 +374,7 @@ async function main() {
             lng,
             visitedAt,
             odometerKm: startKm + (k + 1) * 6,
+            ...(status === "DEAL_DONE" && { dealClosedAt: visitedAt }),
             ...(status === "DEAL_DONE" && !plan && { dealValue: 15000 }),
             ...(status === "DEAL_DONE" &&
               plan && {
