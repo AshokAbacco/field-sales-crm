@@ -55,9 +55,11 @@ export const errMsg = (err, fallback = "Something went wrong") =>
 
 /** Authenticated URL for protected uploads used in <img> */
 export const fileUrl = (path) =>
-  path
-    ? `${API_URL}${path}?token=${encodeURIComponent(tokenStore.get() || "")}`
-    : null;
+  !path
+    ? null
+    : /^https?:\/\//.test(path)
+      ? path
+      : `${API_URL}${path}?token=${encodeURIComponent(tokenStore.get() || "")}`;
 
 /** Download a server export as a file */
 export function downloadExport(type, format, params = {}) {

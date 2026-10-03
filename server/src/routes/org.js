@@ -4,7 +4,8 @@ import { prisma } from '../lib/prisma.js';
 import { asyncHandler, HttpError } from '../lib/http.js';
 import { validate } from '../middleware/validate.js';
 import { requireRole } from '../middleware/auth.js';
-import { getFuelRate } from '../lib/settings.js';
+import { getFuelRate, getRequireOdometerPhoto } from '../lib/settings.js';
+import { r2Enabled } from '../lib/storage.js';
 
 const router = Router();
 
@@ -80,19 +81,28 @@ router.delete('/teams/:id', requireRole('ADMIN'), asyncHandler(async (req, res) 
 
 // ---------- Settings ----------
 router.get('/settings', asyncHandler(async (_req, res) => {
-  res.json({ fuelRatePerKm: await getFuelRate() });
+  const [fuelRatePerKm, requireOdometerPhoto] = await Promise.all([getFuelRate(), getRequireOdometerPhoto()]);
+  res.json({ fuelRatePerKm, requireOdometerPhoto, photoStorage: r2Enabled ? 'cloudflare-r2' : 'server-disk' });
 }));
 router.put(
   '/settings',
   requireRole('ADMIN'),
-  validate(z.object({ fuelRatePerKm: z.coerce.number().min(0).max(1000) })),
+  validate(
+    z.object({
+      fuelRatePerKm: z.coerce.number().min(0).max(1000).optional(),
+      requireOdometerPhoto: z.boolean().optional(),
+    }),
+  ),
   asyncHandler(async (req, res) => {
-    await prisma.setting.upsert({
-      where: { key: 'fuelRatePerKm' },
-      update: { value: String(req.body.fuelRatePerKm) },
-      create: { key: 'fuelRatePerKm', value: String(req.body.fuelRatePerKm) },
-    });
-    res.json({ fuelRatePerKm: req.body.fuelRatePerKm });
+    const entries = [
+      ['fuelRatePerKm', req.body.fuelRatePerKm],
+      ['requireOdometerPhoto', req.body.requireOdometerPhoto],
+    ].filter(([, v]) => v !== undefined);
+    for (const [key, v] of entries) {
+      await prisma.setting.upsert({ where: { key }, update: { value: String(v) }, create: { key, value: String(v) } });
+    }
+    const [fuelRatePerKm, requireOdometerPhoto] = await Promise.all([getFuelRate(), getRequireOdometerPhoto()]);
+    res.json({ fuelRatePerKm, requireOdometerPhoto });
   }),
 );
 

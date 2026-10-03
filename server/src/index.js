@@ -20,6 +20,7 @@ import exportRoutes from "./routes/exports.js";
 import catalogRoutes from "./routes/catalog.js";
 import leadRoutes from "./routes/leads.js";
 import incentiveRoutes from "./routes/incentives.js";
+import placeRoutes from "./routes/places.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -73,8 +74,9 @@ app.use("/api/exports", requireAuth, exportRoutes);
 app.use("/api/catalog", requireAuth, catalogRoutes);
 app.use("/api/leads", requireAuth, leadRoutes);
 app.use("/api/incentives", requireAuth, incentiveRoutes);
+app.use("/api/places", requireAuth, placeRoutes);
 
-// Uploaded files (DL photos) – admin, or manager for own employees
+// Uploaded files on local disk (DL photos, odometer photos when R2 is not configured)
 const uploadRoot = path.resolve(config.uploadDir);
 app.get(
   "/uploads/*",
@@ -84,21 +86,33 @@ app.get(
     next();
   },
   requireAuth,
-  requireRole("ADMIN", "MANAGER"),
   async (req, res, next) => {
     try {
       const file = path.resolve(uploadRoot, req.params[0]);
       if (!file.startsWith(uploadRoot) || !fs.existsSync(file)) return next();
-      if (req.user.role === "MANAGER") {
-        // Managers may only open documents of their own employees
-        const owner = await prisma.user.findFirst({
-          where: {
-            dlPhotoUrl: `/uploads/${req.params[0]}`,
-            managerId: req.user.id,
-          },
-          select: { id: true },
-        });
-        if (!owner) return res.status(404).end();
+      if (req.user.role !== "ADMIN") {
+        // Managers: documents/photos of their own employees. Employees: their own odometer photos.
+        const url = `/uploads/${req.params[0]}`;
+        const team =
+          req.user.role === "MANAGER"
+            ? { managerId: req.user.id }
+            : { id: req.user.id };
+        const [dl, shift] = await Promise.all([
+          req.user.role === "MANAGER"
+            ? prisma.user.findFirst({
+                where: { dlPhotoUrl: url, ...team },
+                select: { id: true },
+              })
+            : null,
+          prisma.shift.findFirst({
+            where: {
+              OR: [{ startPhotoUrl: url }, { endPhotoUrl: url }],
+              user: team,
+            },
+            select: { id: true },
+          }),
+        ]);
+        if (!dl && !shift) return res.status(404).end();
       }
       res.sendFile(file);
     } catch (e) {

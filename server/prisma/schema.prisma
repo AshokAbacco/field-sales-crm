@@ -85,6 +85,7 @@ model User {
   visitsCreated Visit[]   @relation("VisitCreatedBy")
   payouts       IncentivePayout[] @relation("PayoutUser")
   payoutsMade   IncentivePayout[] @relation("PayoutPaidBy")
+  placesAdded   Place[]   @relation("PlaceCreatedBy")
   pings         LocationPing[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -134,11 +135,15 @@ model Shift {
   startLat     Float?
   startLng     Float?
   startAddress String?
+  /// Odometer photo at punch-in (Cloudflare R2 URL or /uploads path)
+  startPhotoUrl String?
   endTime      DateTime?
   endKm        Float?
   endLat       Float?
   endLng       Float?
   endAddress   String?
+  /// Odometer photo at punch-out
+  endPhotoUrl  String?
   distanceKm   Float?
   fuelRate     Decimal?    @db.Decimal(8, 2)
   allowance    Decimal?    @db.Decimal(12, 2)
@@ -162,6 +167,9 @@ model Visit {
   createdBy     User?            @relation("VisitCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   /// When the visit became DEAL_DONE – incentives are counted by this date
   dealClosedAt  DateTime?
+  /// Place from the shared places database (auto-linked by phone when possible)
+  placeId       String?
+  place         Place?           @relation(fields: [placeId], references: [id], onDelete: SetNull)
   shiftId       String?
   shift         Shift?           @relation(fields: [shiftId], references: [id], onDelete: SetNull)
   categoryId    String
@@ -202,6 +210,7 @@ model Visit {
   @@index([nextPaymentDate])
   @@index([status, dealClosedAt])
   @@index([source])
+  @@index([placeId])
 }
 
 model LocationPing {
@@ -235,6 +244,7 @@ model Category {
   isActive         Boolean  @default(true)
   visits           Visit[]
   incentiveRules   IncentiveRule[]
+  places           Place[]
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
@@ -327,4 +337,35 @@ model IncentivePayout {
 
   @@unique([userId, month])
   @@index([month])
+}
+
+/// Shared database of businesses to visit (hotels, restaurants, garages, schools…).
+/// Added by Admin / Managers, searched by everyone by area + category, with visited status.
+model Place {
+  id            String    @id @default(cuid())
+  name          String
+  categoryId    String?
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// Locality / area, e.g. "Vidyaranyapura"
+  area          String?
+  city          String?
+  pincode       String?
+  address       String?
+  phone         String?
+  contactPerson String?
+  lat           Float?
+  lng           Float?
+  notes         String?
+  isActive      Boolean   @default(true)
+  createdById   String?
+  createdBy     User?     @relation("PlaceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  visits        Visit[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([isActive, area])
+  @@index([categoryId])
+  @@index([name])
+  @@index([pincode])
+  @@index([lat, lng])
 }

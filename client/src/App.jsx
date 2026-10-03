@@ -9,6 +9,7 @@ import {
   FiUsers,
   FiSettings,
   FiAward,
+  FiDatabase,
 } from "react-icons/fi";
 import { useAuth } from "./context/AuthContext.jsx";
 import Layout from "./components/Layout.jsx";
@@ -25,11 +26,13 @@ const CommandCenter = lazy(() => import("./pages/admin/CommandCenter.jsx"));
 const StaffSetup = lazy(() => import("./pages/admin/StaffSetup.jsx"));
 const Settings = lazy(() => import("./pages/admin/Settings.jsx"));
 const Incentives = lazy(() => import("./pages/admin/Incentives.jsx"));
+const Places = lazy(() => import("./pages/Places.jsx"));
 
 // Field employees use the app all day → simple tabs with a mobile bottom bar
 const FIELD_NAV = [
   { to: "/field", label: "Today", icon: FiHome, end: true },
   { to: "/field/visits", label: "My Visits", short: "Visits", icon: FiMapPin },
+  { to: "/field/places", label: "Places", icon: FiDatabase },
   { to: "/field/travel", label: "Travel Log", short: "Travel", icon: FiTruck },
   { to: "/field/profile", label: "Profile", icon: FiUser },
 ];
@@ -37,11 +40,13 @@ const FIELD_NAV = [
 const ADMIN_NAV = [
   { to: "/admin", label: "Command Center", icon: FiGrid, end: true },
   { to: "/admin/staff", label: "Staff & Setup", icon: FiUsers },
+  { to: "/admin/places", label: "Places", icon: FiDatabase },
   { to: "/admin/incentives", label: "Incentives", icon: FiAward },
   { to: "/admin/settings", label: "Settings", icon: FiSettings },
 ];
 const MANAGER_NAV = [
   { to: "/manager", label: "Team Command", icon: FiGrid, end: true },
+  { to: "/manager/places", label: "Places", icon: FiDatabase },
   { to: "/manager/incentives", label: "Incentives", icon: FiAward },
   { to: "/manager/settings", label: "Settings", icon: FiSettings },
 ];
@@ -82,6 +87,7 @@ export default function App() {
         >
           <Route index element={<FieldHome />} />
           <Route path="visits" element={<FieldVisits />} />
+          <Route path="places" element={<Places />} />
           <Route path="travel" element={<FieldTravel />} />
           <Route path="profile" element={<Profile />} />
         </Route>
@@ -94,6 +100,7 @@ export default function App() {
           }
         >
           <Route index element={<CommandCenter />} />
+          <Route path="places" element={<Places />} />
           <Route path="incentives" element={<Incentives />} />
           <Route path="settings" element={<Settings />} />
         </Route>
@@ -107,6 +114,7 @@ export default function App() {
         >
           <Route index element={<CommandCenter />} />
           <Route path="staff" element={<StaffSetup />} />
+          <Route path="places" element={<Places />} />
           <Route path="incentives" element={<Incentives />} />
           <Route path="settings" element={<Settings />} />
         </Route>

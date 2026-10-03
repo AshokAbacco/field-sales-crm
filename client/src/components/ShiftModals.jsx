@@ -1,26 +1,69 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { FiPlayCircle, FiStopCircle, FiMap } from 'react-icons/fi';
+import { FiPlayCircle, FiStopCircle, FiMap, FiCamera } from 'react-icons/fi';
 import Modal from './Modal.jsx';
 import LocationCapture from './LocationCapture.jsx';
 import { Field, Spinner, PageLoader, ErrorState, StatusBadge } from './ui.jsx';
 import { RouteMap } from './Maps.jsx';
-import { api, errMsg } from '../api/client.js';
+import { api, errMsg, fileUrl } from '../api/client.js';
+import { useApi } from '../hooks/useApi.js';
+import OdometerPhoto from './OdometerPhoto.jsx';
 import { useCurrentLocation } from '../hooks/useGeo.js';
 import { fmtDayStr, fmtTime, fmtKm, fmtINR } from '../utils/format.js';
+
+/** Build multipart body: fields + optional odometer photo */
+function shiftForm(fields, photo) {
+  const fd = new FormData();
+  Object.entries(fields).forEach(([k, v]) => fd.append(k, v == null ? '' : String(v)));
+  if (photo) fd.append('photo', photo, 'odometer.jpg');
+  return fd;
+}
+
+/** Start / end odometer photo thumbnails (click to open full size) */
+export function OdometerPhotos({ shift, size = 'md' }) {
+  if (!shift?.startPhotoUrl && !shift?.endPhotoUrl) return null;
+  const cls = size === 'sm' ? 'h-9 w-12' : 'h-24 w-32';
+  return (
+    <div className="flex gap-2">
+      {[
+        ['Start', shift.startPhotoUrl, shift.startKm],
+        ['End', shift.endPhotoUrl, shift.endKm],
+      ].map(([k, url, km]) =>
+        url ? (
+          <a key={k} href={fileUrl(url)} target="_blank" rel="noreferrer" className="group relative block" title={`${k} odometer${km != null ? ` · ${km} KM` : ''}`}>
+            <img src={fileUrl(url)} alt={`${k} odometer`} loading="lazy" className={`${cls} rounded-lg border border-slate-200 object-cover group-hover:opacity-90`} />
+            {size !== 'sm' && <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">{k}{km != null ? ` · ${km} KM` : ''}</span>}
+          </a>
+        ) : null,
+      )}
+    </div>
+  );
+}
 
 export function StartShiftModal({ open, onClose, onDone }) {
   const geo = useCurrentLocation();
   const [km, setKm] = useState('');
   const [loc, setLoc] = useState(null);
+  const [photo, setPhoto] = useState(null);
+  const [photoErr, setPhotoErr] = useState(null);
   const [busy, setBusy] = useState(false);
+  const settings = useApi(open ? '/org/settings' : null, null, { enabled: open });
+  const photoRequired = settings.data?.requireOdometerPhoto !== false;
+  useEffect(() => {
+    if (open) (setPhoto(null), setPhotoErr(null));
+  }, [open]);
 
   const submit = async (e) => {
     e.preventDefault();
     if (!loc) return toast.error('Please allow GPS location to start the shift');
+    if (photoRequired && !photo) return setPhotoErr('Take a photo of the odometer');
     setBusy(true);
     try {
-      const { data } = await api.post('/shifts/start', { startKm: Number(km), lat: loc.coords.lat, lng: loc.coords.lng, address: loc.address || null });
+      const { data } = await api.post(
+        '/shifts/start',
+        shiftForm({ startKm: Number(km), lat: loc.coords.lat, lng: loc.coords.lng, address: loc.address || '' }, photo),
+        { timeout: 120000 },
+      );
       toast.success('Shift started. Have a great day on the field!');
       onDone(data.shift);
       onClose();
@@ -62,6 +105,7 @@ export function StartShiftModal({ open, onClose, onDone }) {
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">KM</span>
           </div>
         </Field>
+        <OdometerPhoto value={photo} onChange={(b) => (setPhoto(b), setPhotoErr(null))} required={photoRequired} label="Odometer photo (punch-in)" error={photoErr} />
         {open && <LocationCapture geo={geo} onChange={setLoc} label="Start location" />}
       </form>
     </Modal>
@@ -73,20 +117,27 @@ export function EndShiftModal({ open, onClose, shift, onDone }) {
   const [km, setKm] = useState('');
   const [loc, setLoc] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [photo, setPhoto] = useState(null);
+  const [photoErr, setPhotoErr] = useState(null);
+  const settings = useApi(open ? '/org/settings' : null, null, { enabled: open });
+  const photoRequired = settings.data?.requireOdometerPhoto !== false;
+  useEffect(() => {
+    if (open) (setPhoto(null), setPhotoErr(null));
+  }, [open]);
   const delta = km !== '' && shift ? Math.round((Number(km) - shift.startKm) * 10) / 10 : null;
   const invalid = delta != null && delta < 0;
 
   const submit = async (e) => {
     e.preventDefault();
     if (invalid) return;
+    if (photoRequired && !photo) return setPhotoErr('Take a photo of the odometer');
     setBusy(true);
     try {
-      const { data } = await api.post(`/shifts/${shift.id}/end`, {
-        endKm: Number(km),
-        lat: loc?.coords.lat ?? null,
-        lng: loc?.coords.lng ?? null,
-        address: loc?.address || null,
-      });
+      const { data } = await api.post(
+        `/shifts/${shift.id}/end`,
+        shiftForm({ endKm: Number(km), lat: loc?.coords.lat ?? '', lng: loc?.coords.lng ?? '', address: loc?.address || '' }, photo),
+        { timeout: 120000 },
+      );
       toast.success(`Shift closed · ${fmtKm(data.shift.distanceKm)} · ${fmtINR(data.shift.allowance)} allowance`);
       onDone(data.shift);
       onClose();
@@ -136,6 +187,7 @@ export function EndShiftModal({ open, onClose, shift, onDone }) {
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">KM</span>
           </div>
         </Field>
+        <OdometerPhoto value={photo} onChange={(b) => (setPhoto(b), setPhotoErr(null))} required={photoRequired} label="Odometer photo (punch-out)" error={photoErr} />
         {open && <LocationCapture geo={geo} onChange={setLoc} label="Closing location" />}
         <p className="text-xs text-slate-500">Once you punch out, today's route and distance are submitted for reimbursement.</p>
       </form>
@@ -178,6 +230,14 @@ export function RouteModal({ open, onClose, shiftId }) {
               </div>
             ))}
           </div>
+          {(s.startPhotoUrl || s.endPhotoUrl) && (
+            <div>
+              <p className="mb-1.5 flex items-center gap-1.5 text-xs font-bold uppercase text-slate-500">
+                <FiCamera /> Odometer photos
+              </p>
+              <OdometerPhotos shift={s} />
+            </div>
+          )}
           <RouteMap shift={s} pings={state.data.pings} visits={state.data.visits} />
           {state.data.visits.length > 0 && (
             <ol className="space-y-2">

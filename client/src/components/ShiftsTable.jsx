@@ -1,6 +1,7 @@
 import { FiMap, FiTruck } from 'react-icons/fi';
 import { EmptyState, PageLoader, ErrorState, Pagination } from './ui.jsx';
 import { fmtDayStr, fmtTime, fmtINR } from '../utils/format.js';
+import { OdometerPhotos } from './ShiftModals.jsx';
 
 export default function ShiftsTable({ state, showRep = false, onRoute, onPage }) {
   const { data, loading, error, refetch } = state;
@@ -13,7 +14,7 @@ export default function ShiftsTable({ state, showRep = false, onRoute, onPage })
         <EmptyState title="No shifts in this period" icon={FiTruck} />
       ) : (
         <div className="scroll-thin overflow-x-auto">
-          <table className="w-full min-w-[760px]">
+          <table className="w-full min-w-[860px]">
             <thead className="border-b border-slate-100 bg-slate-50/60">
               <tr>
                 <th className="th">Date</th>
@@ -23,6 +24,7 @@ export default function ShiftsTable({ state, showRep = false, onRoute, onPage })
                 <th className="th">Distance</th>
                 <th className="th">Allowance</th>
                 <th className="th">Visits</th>
+                <th className="th">Odometer photos</th>
                 <th className="th text-right">Route</th>
               </tr>
             </thead>
@@ -53,6 +55,7 @@ export default function ShiftsTable({ state, showRep = false, onRoute, onPage })
                   <td className="td font-bold">{s.distanceKm != null ? `${s.distanceKm} KM` : '—'}</td>
                   <td className="td font-semibold text-emerald-700">{s.allowance != null ? fmtINR(s.allowance) : '—'}</td>
                   <td className="td">{s._count?.visits ?? 0}</td>
+                  <td className="td">{s.startPhotoUrl || s.endPhotoUrl ? <OdometerPhotos shift={s} size="sm" /> : <span className="text-xs text-slate-400">—</span>}</td>
                   <td className="td text-right">
                     <button className="btn-secondary btn-sm" onClick={() => onRoute(s.id)}>
                       <FiMap /> Trace
