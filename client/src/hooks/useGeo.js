@@ -127,7 +127,11 @@ export function useGpsTracker(shiftId, active) {
           lng: +pos.coords.longitude.toFixed(6),
           accuracy: pos.coords.accuracy,
         };
-        setLastFix({ ...fix, at: now });
+        // Update the on-screen GPS status at most every 15 s – updating on every fix (≈1/s)
+        // re-rendered the whole Today screen, which interrupted typing in open forms.
+        setLastFix((prev) =>
+          prev && now - prev.at < 15000 ? prev : { ...fix, at: now },
+        );
         if (now - lastSent.current < PING_MS || pos.coords.accuracy > 200)
           return;
         lastSent.current = now;
