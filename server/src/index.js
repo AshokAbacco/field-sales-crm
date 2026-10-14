@@ -97,7 +97,7 @@ app.get(
           req.user.role === "MANAGER"
             ? { managerId: req.user.id }
             : { id: req.user.id };
-        const [dl, shift] = await Promise.all([
+        const [dl, shift, visit] = await Promise.all([
           req.user.role === "MANAGER"
             ? prisma.user.findFirst({
                 where: { dlPhotoUrl: url, ...team },
@@ -111,8 +111,12 @@ app.get(
             },
             select: { id: true },
           }),
+          prisma.visit.findFirst({
+            where: { odometerPhotoUrl: url, user: team },
+            select: { id: true },
+          }),
         ]);
-        if (!dl && !shift) return res.status(404).end();
+        if (!dl && !shift && !visit) return res.status(404).end();
       }
       res.sendFile(file);
     } catch (e) {

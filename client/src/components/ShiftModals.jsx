@@ -124,8 +124,11 @@ export function EndShiftModal({ open, onClose, shift, onDone }) {
   useEffect(() => {
     if (open) (setPhoto(null), setPhotoErr(null));
   }, [open]);
+  // Closing reading must not be below the last reading of the shift (punch-in or last visit)
+  const todayInfo = useApi(open ? '/shifts/today' : null, null, { enabled: open });
+  const lastKm = Math.max(shift?.startKm ?? 0, todayInfo.data?.lastOdometerKm ?? 0);
   const delta = km !== '' && shift ? Math.round((Number(km) - shift.startKm) * 10) / 10 : null;
-  const invalid = delta != null && delta < 0;
+  const invalid = km !== '' && Number(km) < lastKm;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -181,9 +184,10 @@ export function EndShiftModal({ open, onClose, shift, onDone }) {
             <p className={`text-lg font-bold ${invalid ? 'text-rose-600' : 'text-brand-700'}`}>{delta == null ? '—' : `${delta} KM`}</p>
           </div>
         </div>
-        <Field label="Bike closing odometer" required error={invalid ? `Must be at least ${shift.startKm} KM` : null}>
+        <Field label="Bike closing odometer" required error={invalid ? `Must be at least ${lastKm} KM (last reading)` : null}
+          hint={lastKm > shift.startKm ? `Last reading at a visit: ${lastKm} KM` : null}>
           <div className="relative">
-            <input type="number" inputMode="decimal" min={shift.startKm} step="0.1" required className={`input pr-12 text-lg font-bold ${invalid ? 'input-error' : ''}`} value={km} onChange={(e) => setKm(e.target.value)} />
+            <input type="number" inputMode="decimal" min={lastKm} step="0.1" required className={`input pr-12 text-lg font-bold ${invalid ? 'input-error' : ''}`} value={km} onChange={(e) => setKm(e.target.value)} />
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">KM</span>
           </div>
         </Field>

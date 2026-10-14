@@ -193,6 +193,8 @@ model Visit {
   lat           Float?
   lng           Float?
   odometerKm    Float?
+  /// Odometer photo taken at this visit (optional)
+  odometerPhotoUrl String?
   /// Plan amount agreed with the client
   dealValue     Decimal?         @db.Decimal(14, 2)
   nextFollowUp  DateTime?

@@ -5,7 +5,17 @@ import { asyncHandler, HttpError, paginate, pageMeta } from '../lib/http.js';
 import { validate } from '../middleware/validate.js';
 import { dateRange, localDate, startOfLocalDay, addDays } from '../lib/date.js';
 import { scopedUserWhere, canAccessUser, canAssignTo } from '../lib/scope.js';
+import multer from 'multer';
 import { linkVisitsByPhone } from '../lib/places.js';
+import { saveImage, removeImage, IMAGE_TYPES } from '../lib/storage.js';
+import { lastOdometerReading } from '../lib/odometer.js';
+
+// Optional odometer photo with a visit (multipart). JSON requests pass straight through.
+const photoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => (IMAGE_TYPES[file.mimetype] ? cb(null, true) : cb(new HttpError(400, 'Odometer photo must be a JPG, PNG or WebP image'))),
+}).single('photo');
 
 const router = Router();
 
@@ -155,16 +165,30 @@ router.get(
 
 router.post(
   '/',
+  photoUpload,
   validate(visitSchema),
   asyncHandler(async (req, res) => {
     if (req.user.role !== 'FIELD_VISITOR') throw new HttpError(403, 'Only field employees can log visits');
-    const shift = await prisma.shift.findFirst({ where: { userId: req.user.id, status: 'ACTIVE' }, select: { id: true } });
+    const shift = await prisma.shift.findFirst({ where: { userId: req.user.id, status: 'ACTIVE' }, select: { id: true, startKm: true } });
     if (!shift) throw new HttpError(400, 'Start your day shift before logging a visit');
     const data = await resolveCatalog({ ...req.body });
-    const visit = await prisma.visit.create({
-      data: { ...data, userId: req.user.id, shiftId: shift.id, source: 'FIELD_VISIT', createdById: req.user.id },
-      include: visitInclude,
-    });
+    // Odometer must keep running forward within the shift
+    if (data.odometerKm != null) {
+      const lastKm = await lastOdometerReading(shift);
+      if (data.odometerKm < lastKm) throw new HttpError(400, `Bike KM must be at least ${lastKm} (last reading of today's shift)`);
+      if (data.odometerKm - lastKm > 1000) throw new HttpError(400, 'Bike KM is more than 1000 KM above the last reading – please re-check');
+    }
+    const odometerPhotoUrl = req.file ? await saveImage(req.file.buffer, req.file.mimetype, `odometer/${localDate().slice(0, 7)}/${req.user.id}/visits`) : null;
+    let visit;
+    try {
+      visit = await prisma.visit.create({
+        data: { ...data, odometerPhotoUrl, userId: req.user.id, shiftId: shift.id, source: 'FIELD_VISIT', createdById: req.user.id },
+        include: visitInclude,
+      });
+    } catch (e) {
+      removeImage(odometerPhotoUrl);
+      throw e;
+    }
     if (!visit.placeId) await linkVisitsByPhone({ visitIds: [visit.id] });
     if (data.lat != null && data.lng != null)
       await prisma.locationPing.create({ data: { userId: req.user.id, shiftId: shift.id, lat: data.lat, lng: data.lng } });
