@@ -8,6 +8,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { config, isProd } from "./lib/config.js";
 import { prisma } from "./lib/prisma.js";
+import { Prisma } from "@prisma/client";
 import { requireAuth, requireRole } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/error.js";
 import authRoutes from "./routes/auth.js";
@@ -54,12 +55,56 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 app.use(morgan(isProd ? "combined" : "dev"));
 
+// Fields added by recent updates – if missing, `npx prisma generate` was not run (or the server was not restarted)
+const REQUIRED_FIELDS = {
+  Visit: ["odometerPhotoUrl", "placeId", "dealClosedAt", "source"],
+  Shift: ["startPhotoUrl", "endPhotoUrl"],
+};
+function schemaCheck() {
+  const missing = [];
+  for (const [model, fields] of Object.entries(REQUIRED_FIELDS)) {
+    const known = Object.keys(Prisma[`${model}ScalarFieldEnum`] || {});
+    for (const f of fields)
+      if (!known.includes(f)) missing.push(`${model}.${f}`);
+  }
+  return missing;
+}
+const missingFields = schemaCheck();
+if (missingFields.length) {
+  console.error(
+    `\n[server] ⚠ Prisma client is OUT OF DATE – missing: ${missingFields.join(", ")}`,
+  );
+  console.error(
+    "[server]   Run in the server folder:  npx prisma db push && npx prisma generate   then fully restart the server.\n",
+  );
+}
+
 app.get("/api/health", async (_req, res) => {
+  const prismaClient = missingFields.length
+    ? {
+        status:
+          "OUTDATED – run: npx prisma db push && npx prisma generate, then restart",
+        missing: missingFields,
+      }
+    : "up to date";
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ ok: true, db: "up", time: new Date().toISOString() });
+    // Also confirm the database has the newest column
+    let dbColumns = "up to date";
+    try {
+      await prisma.$queryRaw`SELECT "odometerPhotoUrl" FROM "Visit" LIMIT 1`;
+    } catch {
+      dbColumns = "OUTDATED – run: npx prisma db push (or migrate deploy)";
+    }
+    res.json({
+      ok: true,
+      db: "up",
+      prismaClient,
+      dbColumns,
+      time: new Date().toISOString(),
+    });
   } catch {
-    res.status(503).json({ ok: false, db: "down" });
+    res.status(503).json({ ok: false, db: "down", prismaClient });
   }
 });
 
