@@ -302,8 +302,10 @@ export function VisitFormModal({
     if (!form.productId) er.productId = "Select a product";
     if (form.companyName.trim().length < 2)
       er.companyName = "Business name is required";
+    if (form.contactPerson.trim().length < 2)
+      er.contactPerson = "Owner name is required";
     if (!/^[+\d][\d\s-]{6,18}$/.test(form.phone.trim()))
-      er.phone = "Enter a valid phone number";
+      er.phone = "Enter a valid owner phone number";
     const isLead =
       leadMode || (isEdit && visit.source && visit.source !== "FIELD_VISIT");
     if (!isLead && form.address.trim().length < 3)
@@ -520,15 +522,15 @@ export function VisitFormModal({
               placeholder="e.g. Speed Auto Garage"
             />
           </Field>
-          <Field label="Contact person">
+          <Field label="Owner name" required error={errors.contactPerson}>
             <input
-              className="input"
+              className={inp("contactPerson")}
               value={form.contactPerson}
               onChange={set("contactPerson")}
-              placeholder="Owner / manager name"
+              placeholder="Enter owner name"
             />
           </Field>
-          <Field label="Phone" required error={errors.phone}>
+          <Field label="Owner number" required error={errors.phone}>
             <input
               type="tel"
               inputMode="tel"
