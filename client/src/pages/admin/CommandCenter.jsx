@@ -37,6 +37,7 @@ import { RouteModal } from "../../components/ShiftModals.jsx";
 import VisitsTable from "../../components/VisitsTable.jsx";
 import VisitFilters from "../../components/VisitFilters.jsx";
 import ShiftsTable from "../../components/ShiftsTable.jsx";
+import AttendanceReport from "../../components/AttendanceReport.jsx";
 import {
   VisitDetailModal,
   VisitFormModal,
@@ -794,6 +795,11 @@ export default function CommandCenter() {
               <option value="followUps">Follow-ups</option>
             </select>
             <ExportMenu type="shifts" params={exportParams} label="Travel" />
+            <ExportMenu
+              type="attendance"
+              params={exportParams}
+              label="Attendance"
+            />
           </div>
         }
       >
@@ -979,6 +985,7 @@ function Records({
     page: 1,
   });
   const [travel, setTravel] = useState({ userId: "", status: "", page: 1 });
+  const [attUser, setAttUser] = useState("");
   useEffect(() => {
     setFilters((f) => ({ ...f, from: range.from, to: range.to, page: 1 }));
     setTravel((t) => ({ ...t, page: 1 }));
@@ -1006,8 +1013,9 @@ function Records({
             dir: "asc",
           }
         : { ...scope, ...filters, q };
-  const visits = useApi(tab === "travel" ? null : "/visits", visitParams, {
-    enabled: tab !== "travel",
+  const isVisitTab = tab !== "travel" && tab !== "attendance";
+  const visits = useApi(isVisitTab ? "/visits" : null, visitParams, {
+    enabled: isVisitTab,
   });
   const shifts = useApi(
     tab === "travel" ? "/shifts" : null,
@@ -1044,6 +1052,7 @@ function Records({
     ["followups", "Follow-ups due", FiBell],
     ["payments", "Payments due", FiDollarSign],
     ["travel", "Travel, KM & reimbursement", FiTruck],
+    ["attendance", "Attendance & working hours", FiClock],
   ];
 
   return (
@@ -1060,7 +1069,18 @@ function Records({
             </button>
           ))}
         </div>
-        {tab === "travel" ? (
+        {tab === "attendance" ? (
+          <ExportMenu
+            type="attendance"
+            label="Export attendance"
+            params={{
+              ...scope,
+              from: range.from,
+              to: range.to,
+              userId: attUser,
+            }}
+          />
+        ) : tab === "travel" ? (
           <ExportMenu
             type="shifts"
             params={{
@@ -1131,6 +1151,15 @@ function Records({
               onPage={(pg) => setFilters((f) => ({ ...f, page: pg }))}
             />
           </>
+        )}
+        {tab === "attendance" && (
+          <AttendanceReport
+            params={{ ...scope, from: range.from, to: range.to }}
+            reps={reps}
+            userId={attUser}
+            setUserId={setAttUser}
+            onRoute={onRoute}
+          />
         )}
         {tab === "travel" && (
           <>

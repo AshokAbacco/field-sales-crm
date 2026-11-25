@@ -22,6 +22,7 @@ import catalogRoutes from "./routes/catalog.js";
 import leadRoutes from "./routes/leads.js";
 import incentiveRoutes from "./routes/incentives.js";
 import placeRoutes from "./routes/places.js";
+import attendanceRoutes from "./routes/attendance.js";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -120,6 +121,7 @@ app.use("/api/catalog", requireAuth, catalogRoutes);
 app.use("/api/leads", requireAuth, leadRoutes);
 app.use("/api/incentives", requireAuth, incentiveRoutes);
 app.use("/api/places", requireAuth, placeRoutes);
+app.use("/api/attendance", requireAuth, attendanceRoutes);
 
 // Uploaded files on local disk (DL photos, odometer photos when R2 is not configured)
 const uploadRoot = path.resolve(config.uploadDir);

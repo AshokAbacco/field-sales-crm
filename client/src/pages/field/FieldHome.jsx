@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FiPlus,
   FiPlayCircle,
@@ -40,6 +40,87 @@ import {
   todayStr,
   pct,
 } from "../../utils/format.js";
+
+const minsOfDay = (d) => {
+  const x = new Date(d);
+  return x.getHours() * 60 + x.getMinutes();
+};
+const hm = (m) => {
+  const a = Math.max(0, Math.round(m));
+  return `${Math.floor(a / 60)}h ${String(a % 60).padStart(2, "0")}m`;
+};
+const clk = (m) =>
+  `${Math.floor(m / 60) % 12 || 12}:${String(m % 60).padStart(2, "0")} ${Math.floor(m / 60) % 24 < 12 ? "AM" : "PM"}`;
+
+/** Working-hours progress & alerts for today (login time, 9 hrs incl. 1 hr break) */
+function WorkHoursBar({ shift, rm, weeklyOff = [] }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (shift?.status !== "ACTIVE") return undefined;
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, [shift?.status]);
+  if (!rm) return null;
+  const nowMin = minsOfDay(now);
+  if (!shift) {
+    if (weeklyOff.includes(new Date(now).getDay())) return null;
+    const late = nowMin > rm.lateAfterMin;
+    return (
+      <div
+        className={`flex items-center gap-2 border-t px-5 py-2.5 text-xs ${late ? "border-red-100 bg-red-50 text-red-700" : "border-slate-100 bg-slate-50 text-slate-600"}`}
+      >
+        <FiClock />
+        {late
+          ? `You have not logged in yet – login time is ${clk(rm.startMin)}. Please start your shift.`
+          : `Login time is ${clk(rm.startMin)} · working day ${hm(rm.requiredMin)} incl. ${hm(rm.breakMin)} break.`}
+      </div>
+    );
+  }
+  const end = shift.endTime ? new Date(shift.endTime).getTime() : now;
+  const worked = Math.max(
+    0,
+    (end - new Date(shift.startTime).getTime()) / 60000,
+  );
+  const loginMin = minsOfDay(shift.startTime);
+  const late = loginMin > rm.lateAfterMin;
+  const short = worked < rm.requiredMin;
+  const alerts = [];
+  if (late) alerts.push(`Late login by ${hm(loginMin - rm.startMin)}`);
+  if (shift.endTime && short)
+    alerts.push(`Short by ${hm(rm.requiredMin - worked)}`);
+  const pctDone = Math.min(100, Math.round((worked / rm.requiredMin) * 100));
+  return (
+    <div className="border-t border-slate-100 px-5 py-3">
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="flex items-center gap-1 font-semibold text-slate-700">
+          <FiClock /> Working hours {hm(worked)} / {hm(rm.requiredMin)}
+          <span className="font-normal text-slate-500">
+            (net {hm(Math.max(0, worked - Math.min(rm.breakMin, worked)))} after{" "}
+            {hm(rm.breakMin)} break)
+          </span>
+        </span>
+        <span className="flex flex-wrap gap-1">
+          {alerts.map((a) => (
+            <span
+              key={a}
+              className="rounded-full bg-red-50 px-2 py-0.5 font-semibold text-red-700 ring-1 ring-red-200"
+            >
+              {a}
+            </span>
+          ))}
+          {!shift.endTime && (
+            <span className="text-slate-500">
+              {short
+                ? `Complete at ${clk((loginMin + rm.requiredMin) % 1440)}`
+                : "Day complete ✓"}
+            </span>
+          )}
+        </span>
+      </div>
+      <ProgressBar value={pctDone} tone={short ? "amber" : "green"} />
+    </div>
+  );
+}
 
 export default function FieldHome() {
   const { user } = useAuth();
@@ -181,6 +262,11 @@ export default function FieldHome() {
             )}
           </div>
         </div>
+        <WorkHoursBar
+          shift={openPrev ? null : activeShift || shift}
+          rm={openPrev ? null : shiftQ.data?.workMinutes}
+          weeklyOff={shiftQ.data?.workRules?.weeklyOff}
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

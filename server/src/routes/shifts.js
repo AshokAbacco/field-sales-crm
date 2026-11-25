@@ -9,6 +9,7 @@ import { getFuelRate, getRequireOdometerPhoto } from "../lib/settings.js";
 import { saveImage, removeImage, IMAGE_TYPES } from "../lib/storage.js";
 import { lastOdometerReading, lastOdometerInfo } from "../lib/odometer.js";
 import { scopedUserWhere, canAccessUser } from "../lib/scope.js";
+import { getWorkRules, ruleMinutes } from "../lib/attendance.js";
 
 const router = Router();
 
@@ -96,8 +97,13 @@ router.get(
         });
     const active = shift?.status === "ACTIVE" ? shift : openPrevious;
     // Latest bike reading of the running shift – pre-fills the visit form and the punch-out form
-    const lastOdometer = await lastOdometerInfo(active);
+    const [lastOdometer, workRules] = await Promise.all([
+      lastOdometerInfo(active),
+      getWorkRules(),
+    ]);
     res.json({
+      workRules,
+      workMinutes: ruleMinutes(workRules),
       shift,
       openPrevious,
       today: localDate(),
